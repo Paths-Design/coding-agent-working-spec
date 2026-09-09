@@ -68,3 +68,7 @@ evidence:
     status: pass
     evidence_ref: "agents-fork-identity.test.js decision table + Sterling live probe: 47 unresolved summarized, 72 overlap-only pairs rejected"
     recorded_at: "2026-09-09T22:47:17.422Z"
+  - criterion_id: A3
+    status: pass
+    evidence_ref: agents-fork-identity.test.js exact 604800000ms boundary and liveness-count preservation; 24/24 pass
+    recorded_at: "2026-09-09T22:47:31.829Z"
