@@ -544,37 +544,129 @@ export interface ListOpts extends BaseAgentsOpts {
   readonly staleTtlMs?: number;
 }
 
-/** Conjoined-session advisory (CAWS-AGENTS-FORK-IDENTITY-001): pairs of leases
- * with overlapping [started_at, last_active] activity windows (or windows
- * starting within the proximity threshold — two sessions created seconds
- * apart have zero-length windows that never overlap) on the same host and
- * repo. Display-only — never authority, never a write, never a refusal.
+/**
+ * Identity-backed conjoining telemetry (CAWS-AGENTS-CONJOINING-PRECISION-001).
+ *
+ * `forked_from` is the relation evidence. Activity-window overlap is retained
+ * only as a bounded diagnostic for recent same-platform leases whose harness
+ * identity is incomplete. It never confirms a relationship.
  */
-const CONJOINED_START_PROXIMITY_MS = 60_000;
+const CONJOINING_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const CONJOINED_TEXT_DETAIL_LIMIT = 10;
 
-function conjoinedLeasePairs(leases: LeaseRegistry): ReadonlyArray<{ a: string; b: string }> {
-  const ids = Object.keys(leases);
-  const pairs: { a: string; b: string }[] = [];
-  for (let i = 0; i < ids.length; i++) {
-    const aId = ids[i] as string;
-    for (let j = i + 1; j < ids.length; j++) {
-      const bId = ids[j] as string;
-      const x = leases[aId];
-      const y = leases[bId];
-      if (x === undefined || y === undefined) continue;
+interface ConfirmedConjoinedPair {
+  readonly a: string;
+  readonly b: string;
+  readonly parent: string;
+  readonly child: string;
+  readonly source: 'explicit_fork_identity';
+}
+
+interface UnresolvedConjoinedPair {
+  readonly a: string;
+  readonly b: string;
+  readonly reason: 'missing_fork_identity';
+}
+
+interface ConjoiningIdentitySummary {
+  readonly retention_ms: number;
+  readonly recent_leases: number;
+  readonly excluded_leases: number;
+  readonly classified_leases: number;
+  readonly unclassified_leases: number;
+  readonly rejected_overlap_pairs: number;
+}
+
+interface ConjoiningTelemetry {
+  readonly confirmed: ReadonlyArray<ConfirmedConjoinedPair>;
+  readonly unresolved: ReadonlyArray<UnresolvedConjoinedPair>;
+  readonly identity: ConjoiningIdentitySummary;
+}
+
+function hasCompleteForkIdentity(lease: AgentLease): boolean {
+  if (lease.harness_session_kind === 'fork') {
+    return typeof lease.forked_from === 'string' && lease.forked_from.length > 0;
+  }
+  return lease.harness_session_kind === 'main' || lease.harness_session_kind === 'subagent';
+}
+
+function hasOverlappingActivity(x: AgentLease, y: AgentLease): boolean {
+  const xs = Date.parse(x.started_at);
+  const xe = Date.parse(x.last_active);
+  const ys = Date.parse(y.started_at);
+  const ye = Date.parse(y.last_active);
+  return (
+    Number.isFinite(xs) &&
+    Number.isFinite(xe) &&
+    Number.isFinite(ys) &&
+    Number.isFinite(ye) &&
+    xs <= ye &&
+    ys <= xe
+  );
+}
+
+function deriveConjoiningTelemetry(leases: LeaseRegistry, now: Date): ConjoiningTelemetry {
+  const recentEntries = Object.entries(leases)
+    .filter(([, lease]) => {
+      const lastActive = Date.parse(lease.last_active);
+      return Number.isFinite(lastActive) && now.getTime() - lastActive <= CONJOINING_RETENTION_MS;
+    })
+    .sort(([a], [b]) => a.localeCompare(b));
+  const recent = new Map<string, AgentLease>(recentEntries);
+  const confirmed: ConfirmedConjoinedPair[] = [];
+  const confirmedKeys = new Set<string>();
+
+  for (const [childId, child] of recentEntries) {
+    if (child.harness_session_kind !== 'fork' || typeof child.forked_from !== 'string') continue;
+    const parentId = child.forked_from;
+    if (parentId.length === 0 || !recent.has(parentId) || parentId === childId) continue;
+    const key = [parentId, childId].sort().join('\0');
+    if (confirmedKeys.has(key)) continue;
+    confirmedKeys.add(key);
+    confirmed.push({
+      a: parentId,
+      b: childId,
+      parent: parentId,
+      child: childId,
+      source: 'explicit_fork_identity',
+    });
+  }
+
+  const unresolved: UnresolvedConjoinedPair[] = [];
+  let rejectedOverlapPairs = 0;
+  for (let i = 0; i < recentEntries.length; i++) {
+    const [aId, x] = recentEntries[i] as [string, AgentLease];
+    for (let j = i + 1; j < recentEntries.length; j++) {
+      const [bId, y] = recentEntries[j] as [string, AgentLease];
       if (x.hostname === undefined || y.hostname === undefined || x.hostname !== y.hostname) continue;
-      if (x.repo_root !== y.repo_root) continue;
-      const xs = Date.parse(x.started_at);
-      const xe = Date.parse(x.last_active);
-      const ys = Date.parse(y.started_at);
-      const ye = Date.parse(y.last_active);
-      if (!Number.isFinite(xs) || !Number.isFinite(xe) || !Number.isFinite(ys) || !Number.isFinite(ye)) continue;
-      const windowsOverlap = xs <= ye && ys <= xe;
-      const startsProximate = Math.abs(xs - ys) <= CONJOINED_START_PROXIMITY_MS;
-      if (windowsOverlap || startsProximate) pairs.push({ a: aId, b: bId });
+      if (x.repo_root !== y.repo_root || !hasOverlappingActivity(x, y)) continue;
+      const key = [aId, bId].sort().join('\0');
+      if (confirmedKeys.has(key)) continue;
+
+      const sameKnownPlatform =
+        typeof x.platform === 'string' && typeof y.platform === 'string' && x.platform === y.platform;
+      const missingIdentity = !hasCompleteForkIdentity(x) || !hasCompleteForkIdentity(y);
+      if (sameKnownPlatform && missingIdentity) {
+        unresolved.push({ a: aId, b: bId, reason: 'missing_fork_identity' });
+      } else {
+        rejectedOverlapPairs++;
+      }
     }
   }
-  return pairs;
+
+  const classifiedLeases = recentEntries.filter(([, lease]) => hasCompleteForkIdentity(lease)).length;
+  return {
+    confirmed,
+    unresolved,
+    identity: {
+      retention_ms: CONJOINING_RETENTION_MS,
+      recent_leases: recentEntries.length,
+      excluded_leases: Object.keys(leases).length - recentEntries.length,
+      classified_leases: classifiedLeases,
+      unclassified_leases: recentEntries.length - classifiedLeases,
+      rejected_overlap_pairs: rejectedOverlapPairs,
+    },
+  };
 }
 
 /** Silent-platform badge (CAWS-MESSAGE-BEHAVIOR-001): platforms with at
@@ -624,6 +716,7 @@ export function runAgentsListCommand(opts: ListOpts = {}): number {
     err(KERNEL_FEATURE_UNAVAILABLE_DIAGNOSTIC);
   }
   const summary = summaryRes ?? EMPTY_ACTIVITY_SUMMARY;
+  const conjoining = deriveConjoiningTelemetry(loadRes.value.leases, now);
 
   // Silent-platform badges (CAWS-MESSAGE-BEHAVIOR-001): derived, display-only.
   const engagementRes = platformEngagement(cawsDir);
@@ -649,7 +742,10 @@ export function runAgentsListCommand(opts: ListOpts = {}): number {
         stopped: summary.stopped.length,
         total: summary.total,
       },
-      conjoined_pairs: conjoinedLeasePairs(loadRes.value.leases),
+      // Compatibility field: now contains only identity-confirmed relations.
+      conjoined_pairs: conjoining.confirmed,
+      conjoined_unresolved_pairs: conjoining.unresolved,
+      conjoining_identity: conjoining.identity,
       silent_platforms: silent,
     });
   } else {
@@ -668,8 +764,21 @@ export function runAgentsListCommand(opts: ListOpts = {}): number {
       out(`stopped: ${summary.stopped.length}`);
       for (const l of summary.stopped) out(`  ${l.session_id}`);
     }
-    for (const pair of conjoinedLeasePairs(loadRes.value.leases)) {
-      out(`conjoined-hint: ${pair.a} <=> ${pair.b} (overlapping lease windows; display-only advisory)`);
+    for (const pair of conjoining.confirmed.slice(0, CONJOINED_TEXT_DETAIL_LIMIT)) {
+      out(`conjoined-confirmed: ${pair.child} -> ${pair.parent} (explicit fork identity)`);
+    }
+    if (conjoining.confirmed.length > CONJOINED_TEXT_DETAIL_LIMIT) {
+      out(
+        `conjoined-confirmed: ${conjoining.confirmed.length - CONJOINED_TEXT_DETAIL_LIMIT} more ` +
+          '(use --json for details)'
+      );
+    }
+    if (conjoining.unresolved.length > 0) {
+      out(
+        `conjoined-unresolved: ${conjoining.unresolved.length} recent same-platform overlap(s) ` +
+          `lack complete fork identity (${conjoining.identity.classified_leases}/` +
+          `${conjoining.identity.recent_leases} recent lease(s) classified; 7d window; use --json for details)`
+      );
     }
     for (const s of silent) {
       out(`silent-platform: ${s.platform} (${s.to} to, ${s.from} from)`);
