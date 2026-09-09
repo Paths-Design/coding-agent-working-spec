@@ -2,9 +2,10 @@ id: CAWS-AGENTS-CONJOINING-PRECISION-001
 title: 'Replace overlap-only conjoining telemetry with identity-backed classification'
 risk_tier: 2
 mode: fix
-lifecycle_state: draft
+lifecycle_state: active
+worktree: wt-agents-conjoining-precision
 created_at: '2026-09-09T22:11:05.994Z'
-updated_at: '2026-09-09T22:11:05.994Z'
+updated_at: '2026-09-09T22:13:40.272Z'
 created_by_session: '01a087d4-3b14-7a70-ac8f-2723bc71824b'
 blast_radius:
   modules:
