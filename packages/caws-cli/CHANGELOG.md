@@ -5,6 +5,16 @@ distribution tag; the stable `latest` install remains 12.1.0.
 
 ### Bug Fixes
 
+- **Identity-backed agent conjoining telemetry**
+  (`CAWS-AGENTS-CONJOINING-PRECISION-001`). `caws agents list` now confirms a
+  conjoined relation only from an explicit `forked_from` lease declaration.
+  Same-platform activity overlaps with incomplete identity are summarized as
+  unresolved instead of printed pair by pair; cross-platform and fully
+  classified non-fork overlaps are rejected. The JSON compatibility field
+  `conjoined_pairs` now contains confirmed relations only, with unresolved
+  pairs and identity coverage reported separately. Conjoining telemetry uses a
+  seven-day lease window without changing normal liveness classification.
+
 - **Release-path integrity** (`CAWS-RELEASE-PATH-INTEGRITY-001`). Five defects
   found by pre-release review of the governed release and CI guard paths.
 

@@ -61,6 +61,7 @@ import {
 } from '../../store';
 import { renderDiagnostics } from '../render/diagnostic';
 import { resolveSession } from '../session/resolve-session';
+import { CONJOINED_TEXT_DETAIL_LIMIT, deriveConjoiningTelemetry } from './agents-conjoining';
 
 // ─── kernel feature-detect guard ──────────────────────────────────────────
 //
@@ -544,39 +545,6 @@ export interface ListOpts extends BaseAgentsOpts {
   readonly staleTtlMs?: number;
 }
 
-/** Conjoined-session advisory (CAWS-AGENTS-FORK-IDENTITY-001): pairs of leases
- * with overlapping [started_at, last_active] activity windows (or windows
- * starting within the proximity threshold — two sessions created seconds
- * apart have zero-length windows that never overlap) on the same host and
- * repo. Display-only — never authority, never a write, never a refusal.
- */
-const CONJOINED_START_PROXIMITY_MS = 60_000;
-
-function conjoinedLeasePairs(leases: LeaseRegistry): ReadonlyArray<{ a: string; b: string }> {
-  const ids = Object.keys(leases);
-  const pairs: { a: string; b: string }[] = [];
-  for (let i = 0; i < ids.length; i++) {
-    const aId = ids[i] as string;
-    for (let j = i + 1; j < ids.length; j++) {
-      const bId = ids[j] as string;
-      const x = leases[aId];
-      const y = leases[bId];
-      if (x === undefined || y === undefined) continue;
-      if (x.hostname === undefined || y.hostname === undefined || x.hostname !== y.hostname) continue;
-      if (x.repo_root !== y.repo_root) continue;
-      const xs = Date.parse(x.started_at);
-      const xe = Date.parse(x.last_active);
-      const ys = Date.parse(y.started_at);
-      const ye = Date.parse(y.last_active);
-      if (!Number.isFinite(xs) || !Number.isFinite(xe) || !Number.isFinite(ys) || !Number.isFinite(ye)) continue;
-      const windowsOverlap = xs <= ye && ys <= xe;
-      const startsProximate = Math.abs(xs - ys) <= CONJOINED_START_PROXIMITY_MS;
-      if (windowsOverlap || startsProximate) pairs.push({ a: aId, b: bId });
-    }
-  }
-  return pairs;
-}
-
 /** Silent-platform badge (CAWS-MESSAGE-BEHAVIOR-001): platforms with at
  * least 5 inbound messages and an outbound/inbound ratio at or below 0.2 —
  * sessions of that platform receive mail but historically do not answer.
@@ -624,6 +592,7 @@ export function runAgentsListCommand(opts: ListOpts = {}): number {
     err(KERNEL_FEATURE_UNAVAILABLE_DIAGNOSTIC);
   }
   const summary = summaryRes ?? EMPTY_ACTIVITY_SUMMARY;
+  const conjoining = deriveConjoiningTelemetry(loadRes.value.leases, now);
 
   // Silent-platform badges (CAWS-MESSAGE-BEHAVIOR-001): derived, display-only.
   const engagementRes = platformEngagement(cawsDir);
@@ -649,7 +618,10 @@ export function runAgentsListCommand(opts: ListOpts = {}): number {
         stopped: summary.stopped.length,
         total: summary.total,
       },
-      conjoined_pairs: conjoinedLeasePairs(loadRes.value.leases),
+      // Compatibility field: now contains only identity-confirmed relations.
+      conjoined_pairs: conjoining.confirmed,
+      conjoined_unresolved_pairs: conjoining.unresolved,
+      conjoining_identity: conjoining.identity,
       silent_platforms: silent,
     });
   } else {
@@ -668,8 +640,21 @@ export function runAgentsListCommand(opts: ListOpts = {}): number {
       out(`stopped: ${summary.stopped.length}`);
       for (const l of summary.stopped) out(`  ${l.session_id}`);
     }
-    for (const pair of conjoinedLeasePairs(loadRes.value.leases)) {
-      out(`conjoined-hint: ${pair.a} <=> ${pair.b} (overlapping lease windows; display-only advisory)`);
+    for (const pair of conjoining.confirmed.slice(0, CONJOINED_TEXT_DETAIL_LIMIT)) {
+      out(`conjoined-confirmed: ${pair.child} -> ${pair.parent} (explicit fork identity)`);
+    }
+    if (conjoining.confirmed.length > CONJOINED_TEXT_DETAIL_LIMIT) {
+      out(
+        `conjoined-confirmed: ${conjoining.confirmed.length - CONJOINED_TEXT_DETAIL_LIMIT} more ` +
+          '(use --json for details)'
+      );
+    }
+    if (conjoining.unresolved.length > 0) {
+      out(
+        `conjoined-unresolved: ${conjoining.unresolved.length} recent same-platform overlap(s) ` +
+          `lack complete fork identity (${conjoining.identity.classified_leases}/` +
+          `${conjoining.identity.recent_leases} recent lease(s) classified; 7d window; use --json for details)`
+      );
     }
     for (const s of silent) {
       out(`silent-platform: ${s.platform} (${s.to} to, ${s.from} from)`);

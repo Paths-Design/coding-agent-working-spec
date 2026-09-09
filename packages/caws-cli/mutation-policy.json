@@ -23,6 +23,7 @@
         "src/kernel/worktree/freshness.ts",
         "src/kernel/worktree/transitions.ts",
         "src/shell/binding/resolve-binding.ts",
+        "src/shell/commands/agents-conjoining.ts",
         "src/shell/gates/disposition.ts",
         "src/shell/gates/waiver-filter.ts",
         "src/store/apply-patch.ts",
@@ -235,10 +236,12 @@
       "buildCommand": "node scripts/build-cli.js",
       "targets": [
         { "source": "src/shell/binding/resolve-binding.ts" },
+        { "source": "src/shell/commands/agents-conjoining.ts" },
         { "source": "src/shell/gates/disposition.ts" },
         { "source": "src/shell/gates/waiver-filter.ts" }
       ],
       "tests": [
+        "tests/shell/agents-fork-identity.test.js",
         "tests/shell/binding-bridge-resolve.test.js",
         "tests/shell/binding-resolve.test.js",
         "tests/shell/claim-bridge.test.js",
