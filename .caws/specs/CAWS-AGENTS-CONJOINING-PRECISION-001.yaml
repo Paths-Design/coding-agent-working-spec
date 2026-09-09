@@ -64,3 +64,7 @@ evidence:
     status: pass
     evidence_ref: "agents-fork-identity.test.js: explicit non-overlap and overlapping fork ancestry; 24/24 pass"
     recorded_at: "2026-09-09T22:47:00.450Z"
+  - criterion_id: A2
+    status: pass
+    evidence_ref: "agents-fork-identity.test.js decision table + Sterling live probe: 47 unresolved summarized, 72 overlap-only pairs rejected"
+    recorded_at: "2026-09-09T22:47:17.422Z"
