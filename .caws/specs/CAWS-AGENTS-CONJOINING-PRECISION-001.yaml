@@ -72,3 +72,7 @@ evidence:
     status: pass
     evidence_ref: agents-fork-identity.test.js exact 604800000ms boundary and liveness-count preservation; 24/24 pass
     recorded_at: "2026-09-09T22:47:31.829Z"
+  - criterion_id: A4
+    status: pass
+    evidence_ref: "39/39 agents tests; JSON contract/read-only assertion; shell mutation 93.89% classifier and 86.45% surface"
+    recorded_at: "2026-09-09T22:47:45.688Z"
