@@ -59,3 +59,8 @@ contracts:
   - name: 'agents-conjoining'
     type: behavior
     path: 'packages/caws-cli/src/shell/commands/agents.ts'
+evidence:
+  - criterion_id: A1
+    status: pass
+    evidence_ref: "agents-fork-identity.test.js: explicit non-overlap and overlapping fork ancestry; 24/24 pass"
+    recorded_at: "2026-09-09T22:47:00.450Z"
