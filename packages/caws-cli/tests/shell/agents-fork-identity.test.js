@@ -6,8 +6,8 @@
  * Pins the fork-aware lease surface end to end: harness_session_kind +
  * forked_from written and carried forward across throttled heartbeats,
  * hook_pid replacing the legacy pid on fresh writes (with pid fallback for
- * legacy leases), heartbeat flag validation, the agents-list conjoined
- * advisory, and the hook template's namespace boundary + env passthrough.
+ * legacy leases), heartbeat flag validation, identity-backed conjoining
+ * telemetry, and the hook template's namespace boundary + env passthrough.
  */
 
 const fs = require('fs');
@@ -79,6 +79,10 @@ function writeLease(root, sid, overrides = {}) {
   );
 }
 
+function recentIso(offsetMs) {
+  return new Date(Date.now() + offsetMs).toISOString();
+}
+
 test('A1: heartbeat --session-kind fork --forked-from writes the fields; follow-up without flags carries them forward', () => {
   const root = mkRepo();
   const first = spawnCli(root, [
@@ -129,35 +133,117 @@ test('A3: invalid --session-kind and orphaned --forked-from are refused', () => 
   expect(orphan.stderr).toMatch(/only meaningful with --session-kind fork/);
 });
 
-test('A4: agents list flags overlapping same-host leases as a possible conjoined pair', () => {
+test('A4: explicit fork identity confirms a conjoined pair without temporal overlap', () => {
   const root = mkRepo();
   writeLease(root, 'a-sess', {
-    started_at: '2026-07-04T10:00:00.000Z',
-    last_active: '2026-07-04T11:00:00.000Z',
+    started_at: recentIso(-6 * 60 * 60 * 1000),
+    last_active: recentIso(-5 * 60 * 60 * 1000),
     harness_session_kind: 'main',
   });
   writeLease(root, 'b-sess', {
-    started_at: '2026-07-04T10:30:00.000Z',
-    last_active: '2026-07-04T11:30:00.000Z',
+    started_at: recentIso(-4 * 60 * 60 * 1000),
+    last_active: recentIso(-3 * 60 * 60 * 1000),
     harness_session_kind: 'fork',
     forked_from: 'a-sess',
   });
   const text = spawnCli(root, ['agents', 'list']);
   expect(text.status).toBe(0);
-  expect(text.stdout).toMatch(/conjoined-hint: (a-sess <=> b-sess|b-sess <=> a-sess)/);
+  expect(text.stdout).toContain('conjoined-confirmed: b-sess -> a-sess (explicit fork identity)');
   const json = spawnCli(root, ['agents', 'list', '--json']);
   expect(json.status).toBe(0);
   const parsed = JSON.parse(json.stdout);
-  expect(parsed.conjoined_pairs).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ a: 'a-sess', b: 'b-sess' }),
-    ])
-  );
+  expect(parsed.conjoined_pairs).toEqual([
+    {
+      a: 'a-sess',
+      b: 'b-sess',
+      parent: 'a-sess',
+      child: 'b-sess',
+      source: 'explicit_fork_identity',
+    },
+  ]);
+  expect(parsed.conjoined_unresolved_pairs).toEqual([]);
   // Display-only: no lease file was modified by listing.
-  expect(readLease(root, 'a-sess').last_active).toBe('2026-07-04T11:00:00.000Z');
+  const parentBefore = readLease(root, 'a-sess');
+  spawnCli(root, ['agents', 'list', '--json']);
+  expect(readLease(root, 'a-sess')).toEqual(parentBefore);
 });
 
-test('A5: the hook template teaches the namespace boundary and passes fork identity through', () => {
+test('A5: overlap without fork identity is summarized as unresolved, never asserted pair by pair', () => {
+  const root = mkRepo();
+  writeLease(root, 'unknown-a', {
+    started_at: recentIso(-2 * 60 * 60 * 1000),
+    last_active: recentIso(-30 * 60 * 1000),
+  });
+  writeLease(root, 'unknown-b', {
+    started_at: recentIso(-90 * 60 * 1000),
+    last_active: recentIso(-15 * 60 * 1000),
+  });
+
+  const text = spawnCli(root, ['agents', 'list']);
+  expect(text.status).toBe(0);
+  expect(text.stdout).not.toContain('conjoined-hint:');
+  expect(text.stdout).not.toContain('unknown-a <=> unknown-b');
+  expect(text.stdout).toContain('conjoined-unresolved: 1 recent same-platform overlap(s) lack complete fork identity');
+
+  const parsed = JSON.parse(spawnCli(root, ['agents', 'list', '--json']).stdout);
+  expect(parsed.conjoined_pairs).toEqual([]);
+  expect(parsed.conjoined_unresolved_pairs).toEqual([
+    { a: 'unknown-a', b: 'unknown-b', reason: 'missing_fork_identity' },
+  ]);
+  expect(parsed.conjoining_identity).toEqual({
+    retention_ms: 7 * 24 * 60 * 60 * 1000,
+    recent_leases: 2,
+    excluded_leases: 0,
+    classified_leases: 0,
+    unclassified_leases: 2,
+    rejected_overlap_pairs: 0,
+  });
+});
+
+test('A6: cross-platform overlap and two explicit main sessions are rejected', () => {
+  const root = mkRepo();
+  const commonWindow = {
+    started_at: recentIso(-2 * 60 * 60 * 1000),
+    last_active: recentIso(-30 * 60 * 1000),
+  };
+  writeLease(root, 'main-a', { ...commonWindow, platform: 'codex', harness_session_kind: 'main' });
+  writeLease(root, 'main-b', { ...commonWindow, platform: 'codex', harness_session_kind: 'main' });
+  writeLease(root, 'foreign', { ...commonWindow, platform: 'claude-code' });
+
+  const parsed = JSON.parse(spawnCli(root, ['agents', 'list', '--json']).stdout);
+  expect(parsed.conjoined_pairs).toEqual([]);
+  expect(parsed.conjoined_unresolved_pairs).toEqual([]);
+  expect(parsed.conjoining_identity).toEqual(expect.objectContaining({
+    recent_leases: 3,
+    classified_leases: 2,
+    unclassified_leases: 1,
+    rejected_overlap_pairs: 3,
+  }));
+});
+
+test('A7: conjoining telemetry excludes leases older than seven days without changing liveness totals', () => {
+  const root = mkRepo();
+  const oldWindow = {
+    status: 'stopped',
+    started_at: recentIso(-10 * 24 * 60 * 60 * 1000),
+    last_active: recentIso(-9 * 24 * 60 * 60 * 1000),
+    stopped_at: recentIso(-9 * 24 * 60 * 60 * 1000),
+  };
+  writeLease(root, 'old-a', oldWindow);
+  writeLease(root, 'old-b', oldWindow);
+
+  const parsed = JSON.parse(spawnCli(root, ['agents', 'list', '--include-stopped', '--json']).stdout);
+  expect(parsed.counts.stopped).toBe(2);
+  expect(parsed.conjoined_pairs).toEqual([]);
+  expect(parsed.conjoined_unresolved_pairs).toEqual([]);
+  expect(parsed.conjoining_identity).toEqual(expect.objectContaining({
+    recent_leases: 0,
+    excluded_leases: 2,
+    rejected_overlap_pairs: 0,
+  }));
+});
+
+test('A8: the hook template teaches the namespace boundary and passes fork identity through', () => {
   const src = fs.readFileSync(HOOK_TEMPLATE, 'utf8');
   expect(src).toMatch(/Harness display names \(ListAgents and similar\) are NOT CAWS addresses/);
   expect(src).toMatch(/\$\{CAWS_SESSION_KIND:\+--session-kind "\$CAWS_SESSION_KIND"\}/);
