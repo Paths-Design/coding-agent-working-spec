@@ -16,6 +16,10 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const { initProject } = require('../../dist/store/init-store');
+const {
+  CONJOINING_RETENTION_MS,
+  deriveConjoiningTelemetry,
+} = require('../../dist/shell/commands/agents-conjoining');
 const { cleanupAll, makeTempRepo } = require('../helpers/git-repo-factory');
 
 const CLI = path.resolve(__dirname, '..', '..', 'dist', 'index.js');
@@ -81,6 +85,26 @@ function writeLease(root, sid, overrides = {}) {
 
 function recentIso(offsetMs) {
   return new Date(Date.now() + offsetMs).toISOString();
+}
+
+const DIRECT_NOW = new Date('2026-09-09T20:00:00.000Z');
+
+function directLease(sid, overrides = {}) {
+  return {
+    lease_version: 1,
+    session_id: sid,
+    platform: 'codex',
+    status: 'active',
+    started_at: '2026-09-09T18:00:00.000Z',
+    last_active: '2026-09-09T19:00:00.000Z',
+    repo_root: '/repo',
+    cwd: '/repo',
+    git_common_dir: '/repo/.git',
+    git_dir: '/repo/.git',
+    hostname: 'host-a',
+    last_seen_reason: 'manual_register',
+    ...overrides,
+  };
 }
 
 test('A1: heartbeat --session-kind fork --forked-from writes the fields; follow-up without flags carries them forward', () => {
@@ -241,6 +265,238 @@ test('A7: conjoining telemetry excludes leases older than seven days without cha
     excluded_leases: 2,
     rejected_overlap_pairs: 0,
   }));
+});
+
+describe('identity-backed conjoining classifier', () => {
+  test('the diagnostic retention contract is exactly seven days', () => {
+    expect(CONJOINING_RETENTION_MS).toBe(604800000);
+  });
+
+  test('explicit ancestry confirms a non-overlapping relation and reports complete coverage', () => {
+    const leases = {
+      parent: directLease('parent', {
+        harness_session_kind: 'main',
+        started_at: '2026-09-09T10:00:00.000Z',
+        last_active: '2026-09-09T11:00:00.000Z',
+      }),
+      child: directLease('child', {
+        harness_session_kind: 'fork',
+        forked_from: 'parent',
+        started_at: '2026-09-09T12:00:00.000Z',
+        last_active: '2026-09-09T13:00:00.000Z',
+      }),
+    };
+
+    expect(deriveConjoiningTelemetry(leases, DIRECT_NOW)).toEqual({
+      confirmed: [{
+        a: 'parent',
+        b: 'child',
+        parent: 'parent',
+        child: 'child',
+        source: 'explicit_fork_identity',
+      }],
+      unresolved: [],
+      identity: {
+        retention_ms: CONJOINING_RETENTION_MS,
+        recent_leases: 2,
+        excluded_leases: 0,
+        classified_leases: 2,
+        unclassified_leases: 0,
+        rejected_overlap_pairs: 0,
+      },
+    });
+  });
+
+  test('unknown same-platform overlap remains unresolved with exact pair identity', () => {
+    const telemetry = deriveConjoiningTelemetry({
+      beta: directLease('beta'),
+      alpha: directLease('alpha'),
+    }, DIRECT_NOW);
+
+    expect(telemetry.confirmed).toEqual([]);
+    expect(telemetry.unresolved).toEqual([
+      { a: 'alpha', b: 'beta', reason: 'missing_fork_identity' },
+    ]);
+    expect(telemetry.identity).toEqual({
+      retention_ms: CONJOINING_RETENTION_MS,
+      recent_leases: 2,
+      excluded_leases: 0,
+      classified_leases: 0,
+      unclassified_leases: 2,
+      rejected_overlap_pairs: 0,
+    });
+  });
+
+  test('known main overlap and cross-platform overlap are rejected', () => {
+    const telemetry = deriveConjoiningTelemetry({
+      mainA: directLease('mainA', { harness_session_kind: 'main' }),
+      mainB: directLease('mainB', { harness_session_kind: 'main' }),
+      foreign: directLease('foreign', { platform: 'claude-code' }),
+    }, DIRECT_NOW);
+
+    expect(telemetry.confirmed).toEqual([]);
+    expect(telemetry.unresolved).toEqual([]);
+    expect(telemetry.identity).toEqual({
+      retention_ms: CONJOINING_RETENTION_MS,
+      recent_leases: 3,
+      excluded_leases: 0,
+      classified_leases: 2,
+      unclassified_leases: 1,
+      rejected_overlap_pairs: 3,
+    });
+  });
+
+  test('aged and unparseable leases are excluded from telemetry, not liveness storage', () => {
+    const telemetry = deriveConjoiningTelemetry({
+      recent: directLease('recent', { harness_session_kind: 'subagent' }),
+      old: directLease('old', {
+        started_at: '2026-08-30T10:00:00.000Z',
+        last_active: '2026-08-31T10:00:00.000Z',
+      }),
+      invalid: directLease('invalid', { last_active: 'not-a-timestamp' }),
+    }, DIRECT_NOW);
+
+    expect(telemetry.confirmed).toEqual([]);
+    expect(telemetry.unresolved).toEqual([]);
+    expect(telemetry.identity).toEqual({
+      retention_ms: 604800000,
+      recent_leases: 1,
+      excluded_leases: 2,
+      classified_leases: 1,
+      unclassified_leases: 0,
+      rejected_overlap_pairs: 0,
+    });
+  });
+
+  test('different host, repository, or activity windows never become unresolved candidates', () => {
+    const telemetry = deriveConjoiningTelemetry({
+      base: directLease('base'),
+      otherHost: directLease('otherHost', { hostname: 'host-b' }),
+      otherRepo: directLease('otherRepo', { repo_root: '/other-repo' }),
+      later: directLease('later', {
+        started_at: '2026-09-09T19:15:00.000Z',
+        last_active: '2026-09-09T19:30:00.000Z',
+      }),
+    }, DIRECT_NOW);
+
+    expect(telemetry.confirmed).toEqual([]);
+    expect(telemetry.unresolved).toEqual([]);
+    expect(telemetry.identity.rejected_overlap_pairs).toBe(0);
+  });
+
+  test('missing host identity never becomes an unresolved candidate', () => {
+    const telemetry = deriveConjoiningTelemetry({
+      absent: directLease('absent', { hostname: undefined }),
+      known: directLease('known'),
+    }, DIRECT_NOW);
+
+    expect(telemetry.confirmed).toEqual([]);
+    expect(telemetry.unresolved).toEqual([]);
+    expect(telemetry.identity.rejected_overlap_pairs).toBe(0);
+  });
+
+  test('activity windows that touch at one endpoint count as overlap', () => {
+    const telemetry = deriveConjoiningTelemetry({
+      earlier: directLease('earlier', {
+        started_at: '2026-09-09T18:00:00.000Z',
+        last_active: '2026-09-09T19:00:00.000Z',
+      }),
+      later: directLease('later', {
+        started_at: '2026-09-09T19:00:00.000Z',
+        last_active: '2026-09-09T19:30:00.000Z',
+      }),
+    }, DIRECT_NOW);
+
+    expect(telemetry.unresolved).toEqual([
+      { a: 'earlier', b: 'later', reason: 'missing_fork_identity' },
+    ]);
+  });
+
+  test.each([
+    ['first start', 'a', 'started_at'],
+    ['first end', 'a', 'last_active'],
+    ['second start', 'b', 'started_at'],
+    ['second end', 'b', 'last_active'],
+  ])('unparseable %s prevents an overlap candidate', (_label, leaseId, field) => {
+    const leases = {
+      a: directLease('a'),
+      b: directLease('b'),
+    };
+    leases[leaseId] = directLease(leaseId, { [field]: 'not-a-timestamp' });
+
+    const telemetry = deriveConjoiningTelemetry(leases, DIRECT_NOW);
+    expect(telemetry.unresolved).toEqual([]);
+    expect(telemetry.identity.rejected_overlap_pairs).toBe(0);
+  });
+
+  test('the exact retention boundary is included and one millisecond older is excluded', () => {
+    const boundary = new Date(DIRECT_NOW.getTime() - 604800000).toISOString();
+    const tooOld = new Date(DIRECT_NOW.getTime() - 604800001).toISOString();
+    const telemetry = deriveConjoiningTelemetry({
+      boundary: directLease('boundary', { last_active: boundary, harness_session_kind: 'main' }),
+      old: directLease('old', { last_active: tooOld, harness_session_kind: 'main' }),
+    }, DIRECT_NOW);
+
+    expect(telemetry.identity).toEqual(expect.objectContaining({
+      recent_leases: 1,
+      excluded_leases: 1,
+      classified_leases: 1,
+    }));
+  });
+
+  test('an overlapping explicit relation is confirmed once and removed from ambiguity', () => {
+    const telemetry = deriveConjoiningTelemetry({
+      'a-child': directLease('a-child', {
+        harness_session_kind: 'fork',
+        forked_from: 'z-parent',
+      }),
+      'z-parent': directLease('z-parent', { harness_session_kind: 'main' }),
+    }, DIRECT_NOW);
+
+    expect(telemetry.confirmed).toEqual([expect.objectContaining({
+      parent: 'z-parent',
+      child: 'a-child',
+    })]);
+    expect(telemetry.unresolved).toEqual([]);
+    expect(telemetry.identity.rejected_overlap_pairs).toBe(0);
+  });
+
+  test('a non-fork lease cannot forge ancestry by carrying forked_from', () => {
+    const telemetry = deriveConjoiningTelemetry({
+      parent: directLease('parent', { harness_session_kind: 'main' }),
+      forged: directLease('forged', {
+        harness_session_kind: 'main',
+        forked_from: 'parent',
+      }),
+    }, DIRECT_NOW);
+
+    expect(telemetry.confirmed).toEqual([]);
+    expect(telemetry.unresolved).toEqual([]);
+    expect(telemetry.identity.rejected_overlap_pairs).toBe(1);
+  });
+
+  test('orphan, self-referential, and incomplete fork identity never confirms ancestry', () => {
+    const telemetry = deriveConjoiningTelemetry({
+      orphan: directLease('orphan', { harness_session_kind: 'fork', forked_from: 'missing' }),
+      self: directLease('self', { harness_session_kind: 'fork', forked_from: 'self' }),
+      incomplete: directLease('incomplete', { harness_session_kind: 'fork' }),
+      empty: directLease('empty', { harness_session_kind: 'fork', forked_from: '' }),
+    }, DIRECT_NOW);
+
+    expect(telemetry.confirmed).toEqual([]);
+    expect(telemetry.unresolved).toEqual([
+      { a: 'empty', b: 'incomplete', reason: 'missing_fork_identity' },
+      { a: 'empty', b: 'orphan', reason: 'missing_fork_identity' },
+      { a: 'empty', b: 'self', reason: 'missing_fork_identity' },
+      { a: 'incomplete', b: 'orphan', reason: 'missing_fork_identity' },
+      { a: 'incomplete', b: 'self', reason: 'missing_fork_identity' },
+    ]);
+    expect(telemetry.identity).toEqual(expect.objectContaining({
+      classified_leases: 2,
+      unclassified_leases: 2,
+      rejected_overlap_pairs: 1,
+    }));
+  });
 });
 
 test('A8: the hook template teaches the namespace boundary and passes fork identity through', () => {
