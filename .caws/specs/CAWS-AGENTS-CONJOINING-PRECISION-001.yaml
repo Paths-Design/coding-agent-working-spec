@@ -1,0 +1,58 @@
+id: CAWS-AGENTS-CONJOINING-PRECISION-001
+title: 'Replace overlap-only conjoining telemetry with identity-backed classification'
+risk_tier: 2
+mode: fix
+lifecycle_state: draft
+created_at: '2026-09-09T22:11:05.994Z'
+updated_at: '2026-09-09T22:11:05.994Z'
+created_by_session: '01a087d4-3b14-7a70-ac8f-2723bc71824b'
+blast_radius:
+  modules:
+    - 'packages/caws-cli/src/shell/commands/agents.ts'
+  data_migration: false
+operational_rollback_slo: 5m
+scope:
+  in:
+    - 'packages/caws-cli/src/shell/commands/agents.ts'
+    - 'packages/caws-cli/tests/shell/agents-fork-identity.test.js'
+    - 'packages/caws-cli/CHANGELOG.md'
+  out: []
+invariants:
+  - 'A conjoined pair is confirmed only by an explicit fork lease whose forked_from names the other lease; time overlap alone never produces a confirmed relation.'
+  - 'Unresolved overlap candidates are limited to same-platform recent leases with incomplete fork identity and are summarized in text output rather than emitted pair by pair.'
+  - 'Conjoining telemetry ignores leases whose last activity is older than seven days, while normal agent liveness classification remains unchanged.'
+  - 'JSON preserves conjoined_pairs as the confirmed-pair compatibility field and exposes unresolved pairs plus identity coverage separately; list remains read-only.'
+acceptance:
+  - id: A1
+    given: 'Two recent leases where one is kind fork and forked_from names the other.'
+    when: 'caws agents list runs in text and JSON modes.'
+    then: >-
+      The relation is confirmed exactly once even without temporal overlap, text
+      identifies its explicit source, and conjoined_pairs contains only that
+      confirmed pair.
+  - id: A2
+    given: >-
+      Recent leases overlap but either cross platforms, are explicitly main
+      sessions, or lack complete fork identity.
+    when: 'caws agents list runs.'
+    then: >-
+      Cross-platform and fully classified non-forks are rejected; incomplete
+      same-platform candidates are counted as unresolved and never printed as
+      individual conjoined hints.
+  - id: A3
+    given: 'Stopped or stale leases whose last activity is older than seven days.'
+    when: 'Conjoining telemetry is derived.'
+    then: >-
+      Those leases are excluded from confirmed and unresolved telemetry without
+      changing active, stale, or stopped classification.
+  - id: A4
+    given: 'A mixed recent lease registry with classified and unclassified sessions.'
+    when: 'caws agents list --json runs.'
+    then: >-
+      The output reports confirmed pairs, unresolved pairs, a seven-day retention
+      value, and identity coverage counts while leaving every lease byte unchanged.
+non_functional: {}
+contracts:
+  - name: 'agents-conjoining'
+    type: behavior
+    path: 'packages/caws-cli/src/shell/commands/agents.ts'
