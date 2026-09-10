@@ -9,9 +9,11 @@
 // lighter: line order is authoritative, no hash chain — losing or reordering a
 // chat message is not an audit-integrity failure.
 //
-// Three record kinds share the file (see messages.v1.json):
+// Five operational record kinds share the file (see messages.v1.json):
 //   - { record: 'message', id, actor, to, channel, text, ts, reply_to? } — a directed send
 //   - { record: 'delivery', deliver_id, ts, mode? }               — marks consumed
+//   - { record: 'offer', offer_id, recipient, deliver_ids, ... }   — expiring reservation
+//   - { record: 'offer_settlement', offer_id, outcome, ... }       — deliver or release offer
 //   - { record: 'refusal', id, class, to, reason, ts }            — a refused send/reply
 //
 // Delivery semantics: a message is delivered at most once (a delivery record is
@@ -73,6 +75,33 @@ interface DeliveryRecord {
    *  'poll' (explicit poll). Absent on pre-existing records (unknown). */
   readonly mode?: 'auto' | 'poll';
 }
+
+interface MessageOfferRecord {
+  readonly record: 'offer';
+  readonly offer_id: string;
+  readonly recipient: string;
+  readonly deliver_ids: readonly string[];
+  readonly ts: string;
+  readonly expires_at: string;
+  readonly mode: 'auto';
+}
+
+interface MessageOfferSettlementRecord {
+  readonly record: 'offer_settlement';
+  readonly offer_id: string;
+  readonly recipient: string;
+  readonly outcome: 'delivered' | 'released';
+  readonly ts: string;
+  /** The strongest receipt this record claims. It does not claim recipient visibility. */
+  readonly boundary?: 'adapter_handoff';
+}
+
+type MessageLedgerRecord =
+  | MessageRecord
+  | DeliveryRecord
+  | MessageOfferRecord
+  | MessageOfferSettlementRecord
+  | RefusalRecord;
 
 /** Refusal classes recorded on a refusal record (CAWS-MESSAGE-LEDGER-COMPLETENESS-001). */
 export type RefusalClass =
@@ -202,7 +231,7 @@ function describeNotLiveReason(liveness: RecipientLiveness): string {
   }
 }
 
-function appendLine(cawsDir: string, record: MessageRecord | DeliveryRecord | RefusalRecord): Result<void> {
+function appendLine(cawsDir: string, record: MessageLedgerRecord): Result<void> {
   try {
     fs.mkdirSync(cawsDir, { recursive: true });
     fs.appendFileSync(messagesPath(cawsDir), JSON.stringify(record) + '\n');
@@ -440,7 +469,25 @@ export interface PollResult {
   readonly sender?: MessageSenderContext;
   /** All consumed messages this poll (1..drain), critical-first then oldest-first. */
   readonly messages: readonly PolledMessage[];
+  /** Present only for an automatic offer poll. The messages remain queued until
+   * this exact, live offer is settled at the adapter-handoff boundary. */
+  readonly offer?: MessageOffer;
   readonly diagnostics: ReadonlyArray<Diagnostic>;
+}
+
+export interface MessageOffer {
+  readonly id: string;
+  readonly recipient: string;
+  readonly messageIds: readonly string[];
+  readonly expiresAt: string;
+}
+
+export interface MessageOfferSettlement {
+  readonly offerId: string;
+  readonly recipient: string;
+  readonly outcome: 'delivered' | 'released';
+  readonly settledAt: string;
+  readonly boundary?: 'adapter_handoff';
 }
 
 /** Registry-derived context about a message's sender (CAWS-MESSAGE-DELIVERY-UX-001). */
@@ -527,18 +574,25 @@ export interface PollOptions {
    *  (critical-first, then oldest-first), 1..10, default 1
    *  (CAWS-MESSAGE-DELIVERY-ECONOMICS-001). */
   readonly drain?: number;
+  /** Reserve selected messages for later settlement instead of consuming
+   * them. Intended for automatic hook delivery; incompatible with peek. */
+  readonly offer?: boolean;
+  /** Reservation lifetime. Bounded to 1ms..5m; defaults to 30s. */
+  readonly offerTtlMs?: number;
 }
 
 /** Server-side cap on --wait so a caller can't hold a poll open indefinitely. */
 const MAX_WAIT_MS = 60_000;
 /** Server-side cap on --drain so one poll can't consume the whole ledger into context. */
 const MAX_DRAIN = 10;
+const DEFAULT_OFFER_TTL_MS = 30_000;
+const MAX_OFFER_TTL_MS = 5 * 60_000;
 /** Sleep between poll attempts while waiting. Lock is RELEASED during the sleep. */
 const POLL_RETRY_MS = 150;
 
 interface ParsedMessageLine {
   readonly raw: string;
-  readonly parsed: MessageRecord | DeliveryRecord | RefusalRecord | null;
+  readonly parsed: MessageLedgerRecord | null;
 }
 
 function readMessageLines(cawsDir: string): Result<{ readonly lines: ParsedMessageLine[]; readonly diagnostics: Diagnostic[] }> {
@@ -577,13 +631,82 @@ function readMessageLines(cawsDir: string): Result<{ readonly lines: ParsedMessa
       continue;
     }
     const rec = parsed as { record?: string };
-    if (rec.record === 'message' || rec.record === 'delivery' || rec.record === 'refusal') {
-      lines.push({ raw: line, parsed: parsed as MessageRecord | DeliveryRecord | RefusalRecord });
+    if (
+      rec.record === 'message' ||
+      rec.record === 'delivery' ||
+      rec.record === 'offer' ||
+      rec.record === 'offer_settlement' ||
+      rec.record === 'refusal'
+    ) {
+      lines.push({ raw: line, parsed: parsed as MessageLedgerRecord });
     } else {
       lines.push({ raw: line, parsed: null });
     }
   }
   return ok({ lines, diagnostics });
+}
+
+interface MessageLedgerState {
+  readonly messages: readonly MessageRecord[];
+  readonly deliveredAt: ReadonlyMap<string, string>;
+  readonly offers: ReadonlyMap<string, MessageOfferRecord>;
+  readonly settlements: ReadonlyMap<string, MessageOfferSettlementRecord>;
+  readonly reserved: ReadonlySet<string>;
+}
+
+function isMessageOfferRecord(record: MessageLedgerRecord): record is MessageOfferRecord {
+  return record.record === 'offer' &&
+    typeof record.offer_id === 'string' &&
+    typeof record.recipient === 'string' &&
+    Array.isArray(record.deliver_ids) &&
+    record.deliver_ids.length > 0 &&
+    record.deliver_ids.every((id) => typeof id === 'string') &&
+    typeof record.expires_at === 'string';
+}
+
+function isMessageOfferSettlementRecord(
+  record: MessageLedgerRecord
+): record is MessageOfferSettlementRecord {
+  return record.record === 'offer_settlement' &&
+    typeof record.offer_id === 'string' &&
+    typeof record.recipient === 'string' &&
+    (record.outcome === 'delivered' || record.outcome === 'released');
+}
+
+/** Replay append-only message state. Invalid cross-offer settlements are
+ * ignored here; the writer rejects them before append. */
+function replayMessageLedger(lines: readonly ParsedMessageLine[], nowMs = Date.now()): MessageLedgerState {
+  const messages: MessageRecord[] = [];
+  const deliveredAt = new Map<string, string>();
+  const offers = new Map<string, MessageOfferRecord>();
+  const settlements = new Map<string, MessageOfferSettlementRecord>();
+  for (const entry of lines) {
+    const record = entry.parsed;
+    if (record?.record === 'message') messages.push(record);
+    else if (record?.record === 'delivery' && !deliveredAt.has(record.deliver_id)) {
+      deliveredAt.set(record.deliver_id, record.ts);
+    } else if (record && isMessageOfferRecord(record) && !offers.has(record.offer_id)) {
+      offers.set(record.offer_id, record);
+    } else if (record && isMessageOfferSettlementRecord(record) && !settlements.has(record.offer_id)) {
+      const offer = offers.get(record.offer_id);
+      if (offer?.recipient === record.recipient) settlements.set(record.offer_id, record);
+    }
+  }
+  for (const [offerId, settlement] of settlements) {
+    if (settlement.outcome !== 'delivered') continue;
+    const offer = offers.get(offerId);
+    if (!offer) continue;
+    for (const messageId of offer.deliver_ids) {
+      if (!deliveredAt.has(messageId)) deliveredAt.set(messageId, settlement.ts);
+    }
+  }
+  const reserved = new Set<string>();
+  for (const offer of offers.values()) {
+    const expiresAt = Date.parse(offer.expires_at);
+    if (settlements.has(offer.offer_id) || !Number.isFinite(expiresAt) || expiresAt <= nowMs) continue;
+    for (const messageId of offer.deliver_ids) reserved.add(messageId);
+  }
+  return { messages, deliveredAt, offers, settlements, reserved };
 }
 
 function messageEntry(message: MessageRecord, delivered: boolean, state: 'candidate' | 'skipped', reason: string): MessagePruneEntry {
@@ -611,13 +734,7 @@ export interface MessagePruneOptions {
 function buildMessagePrunePlan(cawsDir: string, opts: MessagePruneOptions): Result<MessagePrunePlan & { readonly lines: readonly ParsedMessageLine[] }> {
   const loaded = readMessageLines(cawsDir);
   if (!loaded.ok) return err(loaded.errors);
-
-  const delivered = new Set<string>();
-  for (const entry of loaded.value.lines) {
-    if (entry.parsed?.record === 'delivery' && typeof entry.parsed.deliver_id === 'string') {
-      delivered.add(entry.parsed.deliver_id);
-    }
-  }
+  const state = replayMessageLedger(loaded.value.lines);
 
   const include = new Set(opts.include ?? []);
   const exclude = new Set(opts.exclude ?? []);
@@ -630,7 +747,7 @@ function buildMessagePrunePlan(cawsDir: string, opts: MessagePruneOptions): Resu
   for (const entry of loaded.value.lines) {
     if (entry.parsed?.record !== 'message') continue;
     const message = entry.parsed;
-    const isDelivered = delivered.has(message.id);
+    const isDelivered = state.deliveredAt.has(message.id);
     if (!isDelivered) {
       skipped.push(messageEntry(message, false, 'skipped', 'undelivered'));
       continue;
@@ -655,8 +772,16 @@ function buildMessagePrunePlan(cawsDir: string, opts: MessagePruneOptions): Resu
   }
 
   const candidateIds = new Set(candidates.map((candidate) => candidate.id));
-  const deliveryRecordsToRemove = loaded.value.lines.filter(
-    (entry) => entry.parsed?.record === 'delivery' && candidateIds.has(entry.parsed.deliver_id)
+  const fullyPrunedOffers = new Set(
+    [...state.offers.values()]
+      .filter((offer) => offer.deliver_ids.every((id) => candidateIds.has(id)))
+      .map((offer) => offer.offer_id)
+  );
+  const deliveryRecordsToRemove = loaded.value.lines.filter((entry) =>
+    (entry.parsed?.record === 'delivery' && candidateIds.has(entry.parsed.deliver_id)) ||
+    (entry.parsed?.record === 'offer_settlement' &&
+      entry.parsed.outcome === 'delivered' &&
+      fullyPrunedOffers.has(entry.parsed.offer_id))
   ).length;
 
   return ok({
@@ -696,6 +821,12 @@ export function pruneMessages(cawsDir: string, opts: MessagePruneOptions): Resul
     }
 
     const candidateIds = new Set(plan.candidates.map((candidate) => candidate.id));
+    const state = replayMessageLedger(lines);
+    const fullyPrunedOffers = new Set(
+      [...state.offers.values()]
+        .filter((offer) => offer.deliver_ids.every((id) => candidateIds.has(id)))
+        .map((offer) => offer.offer_id)
+    );
     let prunedDeliveryRecords = 0;
     const keptLines: string[] = [];
     const archivedLines: string[] = [];
@@ -706,6 +837,15 @@ export function pruneMessages(cawsDir: string, opts: MessagePruneOptions): Resul
       }
       if (entry.parsed?.record === 'delivery' && candidateIds.has(entry.parsed.deliver_id)) {
         prunedDeliveryRecords++;
+        archivedLines.push(entry.raw);
+        continue;
+      }
+      if (entry.parsed?.record === 'offer' && fullyPrunedOffers.has(entry.parsed.offer_id)) {
+        archivedLines.push(entry.raw);
+        continue;
+      }
+      if (entry.parsed?.record === 'offer_settlement' && fullyPrunedOffers.has(entry.parsed.offer_id)) {
+        if (entry.parsed.outcome === 'delivered') prunedDeliveryRecords++;
         archivedLines.push(entry.raw);
         continue;
       }
@@ -775,8 +915,21 @@ export function pollMessage(cawsDir: string, me: string, options: PollOptions = 
   const deadline = Date.now() + waitMs;
   const receipt = options.receipt === 'auto' ? 'auto' : 'poll';
   const drain = Math.min(Math.max(1, Math.floor(options.drain ?? 1)), MAX_DRAIN);
+  const offer = options.offer === true && options.peek !== true;
+  const offerTtlMs = Math.min(
+    Math.max(1, Math.floor(options.offerTtlMs ?? DEFAULT_OFFER_TTL_MS)),
+    MAX_OFFER_TTL_MS
+  );
   const attempt = () =>
-    withLifecycleLock(cawsDir, () => pollMessageLocked(cawsDir, me, options.peek === true, receipt, drain), {
+    withLifecycleLock(cawsDir, () => pollMessageLocked(
+      cawsDir,
+      me,
+      options.peek === true,
+      receipt,
+      drain,
+      offer,
+      offerTtlMs
+    ), {
       lockPath: path.join(cawsDir, MESSAGES_LOCK_FILENAME),
     });
 
@@ -795,53 +948,17 @@ function pollMessageLocked(
   me: string,
   peek: boolean,
   receipt: 'auto' | 'poll',
-  drain: number
+  drain: number,
+  createOffer: boolean,
+  offerTtlMs: number
 ): Result<PollResult> {
-  const file = messagesPath(cawsDir);
-  if (!fs.existsSync(file)) return ok({ message: null, messages: [], diagnostics: [] });
+  const loaded = readMessageLines(cawsDir);
+  if (!loaded.ok) return err(loaded.errors);
+  const state = replayMessageLedger(loaded.value.lines);
+  const diagnostics = loaded.value.diagnostics;
 
-  let raw: string;
-  try {
-    raw = fs.readFileSync(file, 'utf8');
-  } catch (e) {
-    return err(
-      storeDiagnostic(
-        STORE_RULES.MESSAGES_LOG_UNREADABLE,
-        `Failed to read ${MESSAGES_FILENAME}: ${(e as Error).message}`
-      )
-    );
-  }
-
-  const diagnostics: Diagnostic[] = [];
-  const messages: MessageRecord[] = [];
-  const delivered = new Set<string>();
-  let lineNo = 0;
-  for (const line of raw.split('\n')) {
-    lineNo++;
-    if (line.length === 0) continue;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      diagnostics.push(
-        storeDiagnostic(
-          STORE_RULES.MESSAGES_LINE_MALFORMED,
-          `${MESSAGES_FILENAME}:${lineNo} is not valid JSON — skipped.`
-        )
-      );
-      continue;
-    }
-    const rec = parsed as { record?: string };
-    if (rec.record === 'message') {
-      messages.push(parsed as MessageRecord);
-    } else if (rec.record === 'delivery') {
-      const d = parsed as DeliveryRecord;
-      if (typeof d.deliver_id === 'string') delivered.add(d.deliver_id);
-    }
-  }
-
-  const undelivered = messages
-    .filter((m) => m.to === me && !delivered.has(m.id))
+  const undelivered = state.messages
+    .filter((m) => m.to === me && !state.deliveredAt.has(m.id) && !state.reserved.has(m.id))
     .sort((a, b) => {
       // Critical-first, then oldest-first (CAWS-MESSAGE-DELIVERY-ECONOMICS-001).
       const aCrit = a.urgency === 'critical' ? 0 : 1;
@@ -869,6 +986,33 @@ function pollMessageLocked(
     });
   }
 
+  if (createOffer) {
+    const nowMs = Date.now();
+    const offerRecord: MessageOfferRecord = {
+      record: 'offer',
+      offer_id: crypto.randomUUID(),
+      recipient: me,
+      deliver_ids: polled.map((entry) => entry.message.id),
+      ts: new Date(nowMs).toISOString(),
+      expires_at: new Date(nowMs + offerTtlMs).toISOString(),
+      mode: 'auto',
+    };
+    const offerAppend = appendLine(cawsDir, offerRecord);
+    if (!offerAppend.ok) return err(offerAppend.errors);
+    return ok({
+      message: head.message,
+      ...(head.sender !== undefined ? { sender: head.sender } : {}),
+      messages: polled,
+      offer: {
+        id: offerRecord.offer_id,
+        recipient: offerRecord.recipient,
+        messageIds: offerRecord.deliver_ids,
+        expiresAt: offerRecord.expires_at,
+      },
+      diagnostics,
+    });
+  }
+
   for (const entry of polled) {
     const deliveryAppend = appendLine(cawsDir, {
       record: 'delivery',
@@ -886,42 +1030,80 @@ function pollMessageLocked(
   });
 }
 
+/** Settle one exact live offer. A delivered settlement records successful
+ * adapter handoff, not recipient-context visibility. Released offers retry. */
+export function settleMessageOffer(
+  cawsDir: string,
+  offerId: string,
+  recipient: string,
+  outcome: 'delivered' | 'released'
+): Result<MessageOfferSettlement> {
+  return withLifecycleLock(cawsDir, () => {
+    const loaded = readMessageLines(cawsDir);
+    if (!loaded.ok) return err(loaded.errors);
+    const state = replayMessageLedger(loaded.value.lines);
+    const offer = state.offers.get(offerId);
+    if (!offer) {
+      return err(storeDiagnostic(
+        STORE_RULES.MESSAGES_OFFER_NOT_FOUND,
+        `Message offer "${offerId}" does not exist.`
+      ));
+    }
+    if (offer.recipient !== recipient) {
+      return err(storeDiagnostic(
+        STORE_RULES.MESSAGES_OFFER_RECIPIENT_MISMATCH,
+        `Message offer "${offerId}" belongs to recipient "${offer.recipient}", not "${recipient}".`
+      ));
+    }
+    if (state.settlements.has(offerId)) {
+      return err(storeDiagnostic(
+        STORE_RULES.MESSAGES_OFFER_NOT_ACTIVE,
+        `Message offer "${offerId}" is already settled; replay is refused.`
+      ));
+    }
+    const expiresAt = Date.parse(offer.expires_at);
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+      return err(storeDiagnostic(
+        STORE_RULES.MESSAGES_OFFER_NOT_ACTIVE,
+        `Message offer "${offerId}" expired and is no longer eligible for settlement.`
+      ));
+    }
+    if (offer.deliver_ids.some((messageId) => state.deliveredAt.has(messageId))) {
+      return err(storeDiagnostic(
+        STORE_RULES.MESSAGES_OFFER_NOT_ACTIVE,
+        `Message offer "${offerId}" contains a message already delivered by another consumer.`
+      ));
+    }
+    const now = new Date().toISOString();
+    const settlement: MessageOfferSettlementRecord = {
+      record: 'offer_settlement',
+      offer_id: offerId,
+      recipient,
+      outcome,
+      ts: now,
+      ...(outcome === 'delivered' ? { boundary: 'adapter_handoff' as const } : {}),
+    };
+    const appended = appendLine(cawsDir, settlement);
+    if (!appended.ok) return err(appended.errors);
+    return ok({
+      offerId,
+      recipient,
+      outcome,
+      settledAt: now,
+      ...(settlement.boundary !== undefined ? { boundary: settlement.boundary } : {}),
+    });
+  }, { lockPath: path.join(cawsDir, MESSAGES_LOCK_FILENAME) });
+}
+
 /**
  * Count undelivered messages addressed to `me` (mailbox depth) — read-only triage,
  * no consumption. Used by `caws message poll --peek` / inbox display.
  */
 export function inboxCount(cawsDir: string, me: string): Result<number> {
-  const file = messagesPath(cawsDir);
-  if (!fs.existsSync(file)) return ok(0);
-  let raw: string;
-  try {
-    raw = fs.readFileSync(file, 'utf8');
-  } catch (e) {
-    return err(
-      storeDiagnostic(
-        STORE_RULES.MESSAGES_LOG_UNREADABLE,
-        `Failed to read ${MESSAGES_FILENAME}: ${(e as Error).message}`
-      )
-    );
-  }
-  const messages: MessageRecord[] = [];
-  const delivered = new Set<string>();
-  for (const line of raw.split('\n')) {
-    if (line.length === 0) continue;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    const rec = parsed as { record?: string };
-    if (rec.record === 'message') messages.push(parsed as MessageRecord);
-    else if (rec.record === 'delivery') {
-      const d = parsed as DeliveryRecord;
-      if (typeof d.deliver_id === 'string') delivered.add(d.deliver_id);
-    }
-  }
-  return ok(messages.filter((m) => m.to === me && !delivered.has(m.id)).length);
+  const loaded = readMessageLines(cawsDir);
+  if (!loaded.ok) return err(loaded.errors);
+  const state = replayMessageLedger(loaded.value.lines);
+  return ok(state.messages.filter((m) => m.to === me && !state.deliveredAt.has(m.id)).length);
 }
 
 /**
@@ -935,46 +1117,10 @@ export function inboxMessages(
   me: string,
   opts: { readonly limit?: number } = {}
 ): Result<MessageInboxListResult> {
-  const file = messagesPath(cawsDir);
-  if (!fs.existsSync(file)) return ok({ messages: [], waiting: 0, diagnostics: [] });
-  let raw: string;
-  try {
-    raw = fs.readFileSync(file, 'utf8');
-  } catch (e) {
-    return err(
-      storeDiagnostic(
-        STORE_RULES.MESSAGES_LOG_UNREADABLE,
-        `Failed to read ${MESSAGES_FILENAME}: ${(e as Error).message}`
-      )
-    );
-  }
-  const diagnostics: Diagnostic[] = [];
-  const messages: MessageRecord[] = [];
-  const delivered = new Set<string>();
-  let lineNo = 0;
-  for (const line of raw.split('\n')) {
-    lineNo++;
-    if (line.length === 0) continue;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      diagnostics.push(
-        storeDiagnostic(
-          STORE_RULES.MESSAGES_LINE_MALFORMED,
-          `${MESSAGES_FILENAME}:${lineNo} is not valid JSON — skipped.`
-        )
-      );
-      continue;
-    }
-    const rec = parsed as { record?: string };
-    if (rec.record === 'message') messages.push(parsed as MessageRecord);
-    else if (rec.record === 'delivery') {
-      const d = parsed as DeliveryRecord;
-      if (typeof d.deliver_id === 'string') delivered.add(d.deliver_id);
-    }
-  }
-  const waitingMessages = messages.filter((m) => m.to === me && !delivered.has(m.id));
+  const loaded = readMessageLines(cawsDir);
+  if (!loaded.ok) return err(loaded.errors);
+  const state = replayMessageLedger(loaded.value.lines);
+  const waitingMessages = state.messages.filter((m) => m.to === me && !state.deliveredAt.has(m.id));
   const limit =
     typeof opts.limit === 'number' && Number.isFinite(opts.limit) && opts.limit >= 0
       ? Math.floor(opts.limit)
@@ -982,7 +1128,7 @@ export function inboxMessages(
   return ok({
     messages: waitingMessages.slice(0, limit),
     waiting: waitingMessages.length,
-    diagnostics,
+    diagnostics: loaded.value.diagnostics,
   });
 }
 
@@ -1032,19 +1178,17 @@ export function mineQueued(
 ): Result<MineQueuedResult> {
   const loaded = readMessageLines(cawsDir);
   if (!loaded.ok) return err(loaded.errors);
-  const delivered = new Set<string>();
+  const state = replayMessageLedger(loaded.value.lines);
   const mine: MessageRecord[] = [];
   for (const entry of loaded.value.lines) {
-    if (entry.parsed?.record === 'delivery' && typeof entry.parsed.deliver_id === 'string') {
-      delivered.add(entry.parsed.deliver_id);
-    } else if (entry.parsed?.record === 'message') {
+    if (entry.parsed?.record === 'message') {
       const from = entry.parsed.actor.session_id ?? entry.parsed.actor.id;
       if (from === me) mine.push(entry.parsed);
     }
   }
   const now = Date.now();
   const aged = mine
-    .filter((m) => !delivered.has(m.id))
+    .filter((m) => !state.deliveredAt.has(m.id))
     .map((message) => {
       const ts = Date.parse(message.ts);
       return { message, ageMs: Number.isFinite(ts) ? Math.max(0, now - ts) : 0 };
@@ -1104,18 +1248,10 @@ export function platformEngagement(cawsDir: string): Result<Record<string, Platf
 export function inboxAllMessages(cawsDir: string): Result<MessageInboxAllResult> {
   const loaded = readMessageLines(cawsDir);
   if (!loaded.ok) return err(loaded.errors);
-  const delivered = new Set<string>();
-  const messages: MessageRecord[] = [];
-  for (const entry of loaded.value.lines) {
-    if (entry.parsed?.record === 'delivery' && typeof entry.parsed.deliver_id === 'string') {
-      delivered.add(entry.parsed.deliver_id);
-    } else if (entry.parsed?.record === 'message') {
-      messages.push(entry.parsed);
-    }
-  }
+  const state = replayMessageLedger(loaded.value.lines);
   const now = Date.now();
-  const undelivered = messages
-    .filter((m) => !delivered.has(m.id))
+  const undelivered = state.messages
+    .filter((m) => !state.deliveredAt.has(m.id))
     .sort((a, b) => a.ts.localeCompare(b.ts))
     .map((message) => {
       const ts = Date.parse(message.ts);
@@ -1150,15 +1286,9 @@ export interface MessageDeliveryState {
 export function getMessageDeliveryState(cawsDir: string, messageId: string): Result<MessageDeliveryState | null> {
   const loaded = readMessageLines(cawsDir);
   if (!loaded.ok) return err(loaded.errors);
-  let target: MessageRecord | null = null;
-  let deliveredAt: string | undefined;
-  for (const entry of loaded.value.lines) {
-    if (entry.parsed?.record === 'message' && entry.parsed.id === messageId) {
-      target = entry.parsed;
-    } else if (entry.parsed?.record === 'delivery' && entry.parsed.deliver_id === messageId) {
-      deliveredAt = entry.parsed.ts;
-    }
-  }
+  const state = replayMessageLedger(loaded.value.lines);
+  const target = state.messages.find((message) => message.id === messageId) ?? null;
+  const deliveredAt = state.deliveredAt.get(messageId);
   if (target === null) return ok(null);
   return ok({
     message: target,
@@ -1183,23 +1313,11 @@ export function channelHistory(cawsDir: string, a: string, b: string): Result<Hi
   const loaded = readMessageLines(cawsDir);
   if (!loaded.ok) return err(loaded.errors);
   const ch = channelId(a, b);
-  // Two passes: a message's delivery record ALWAYS trails the message in line
-  // order (delivery happens after the send), so a single interleaved pass
-  // would annotate every entry undelivered.
-  const deliveredAt = new Map<string, string>();
-  const channelMessages: MessageRecord[] = [];
-  for (const entry of loaded.value.lines) {
-    if (entry.parsed?.record === 'delivery' && typeof entry.parsed.deliver_id === 'string') {
-      // First delivery record wins for the timestamp (deliver-once; a second
-      // record for the same id would be a replay artifact, not a re-delivery).
-      if (!deliveredAt.has(entry.parsed.deliver_id)) deliveredAt.set(entry.parsed.deliver_id, entry.parsed.ts);
-    } else if (entry.parsed?.record === 'message' && entry.parsed.channel === ch) {
-      channelMessages.push(entry.parsed);
-    }
-  }
+  const state = replayMessageLedger(loaded.value.lines);
+  const channelMessages = state.messages.filter((message) => message.channel === ch);
   return ok(
     channelMessages.map((message) => {
-      const at = deliveredAt.get(message.id);
+      const at = state.deliveredAt.get(message.id);
       return {
         ...message,
         delivered: at !== undefined,

@@ -205,6 +205,12 @@ export const STORE_RULES = {
    *  aborted BEFORE the live ledger is rewritten so pruned history is never
    *  silently dropped. */
   MESSAGES_ARCHIVE_APPEND_FAILED: 'store.messages.archive_append_failed',
+  /** Settlement referenced an offer id absent from the live ledger. */
+  MESSAGES_OFFER_NOT_FOUND: 'store.messages.offer_not_found',
+  /** Settlement referenced an expired or previously settled offer. */
+  MESSAGES_OFFER_NOT_ACTIVE: 'store.messages.offer_not_active',
+  /** Settlement recipient did not match the recipient bound into the offer. */
+  MESSAGES_OFFER_RECIPIENT_MISMATCH: 'store.messages.offer_recipient_mismatch',
   // AUTH-BINDING-BRIDGE-001: bridge-binding refusals.
   BRIDGE_FOREIGN_OWNER: 'store.claims.bridge_foreign_owner',
   BRIDGE_FILE_INVALID: 'store.claims.bridge_file_invalid',

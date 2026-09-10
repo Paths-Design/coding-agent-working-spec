@@ -18,6 +18,7 @@
 
 import {
   pollMessage,
+  settleMessageOffer,
   resolveRepoRoot,
   resolveRecipient,
   sendMessage,
@@ -507,6 +508,9 @@ export interface MessagePollCommandOptions extends BaseCommandOptions {
   /** Consume up to this many messages in one poll (1..10, default 1),
    *  critical-first then oldest-first (CAWS-MESSAGE-DELIVERY-ECONOMICS-001). */
   readonly drain?: number;
+  /** Reserve for later adapter settlement rather than consume on poll. */
+  readonly offer?: boolean;
+  readonly offerTtlMs?: number;
 }
 
 /**
@@ -542,12 +546,23 @@ export function runMessagePollCommand(opts: MessagePollCommandOptions): number {
     }
   }
 
-  const pollOpts: { waitMs?: number; peek?: boolean; receipt?: 'auto' | 'poll'; drain?: number } = {};
+  const pollOpts: {
+    waitMs?: number;
+    peek?: boolean;
+    receipt?: 'auto' | 'poll';
+    drain?: number;
+    offer?: boolean;
+    offerTtlMs?: number;
+  } = {};
   if (typeof opts.waitMs === 'number' && opts.waitMs > 0) pollOpts.waitMs = opts.waitMs;
   if (opts.peek === true) pollOpts.peek = true;
   if (opts.receipt === 'auto') pollOpts.receipt = 'auto';
   if (typeof opts.drain === 'number' && Number.isFinite(opts.drain) && opts.drain > 0) {
     pollOpts.drain = Math.floor(opts.drain);
+  }
+  if (opts.offer === true) pollOpts.offer = true;
+  if (typeof opts.offerTtlMs === 'number' && Number.isFinite(opts.offerTtlMs)) {
+    pollOpts.offerTtlMs = opts.offerTtlMs;
   }
 
   const pollStartMs = Date.now();
@@ -558,7 +573,7 @@ export function runMessagePollCommand(opts: MessagePollCommandOptions): number {
     err(renderDiagnostics(polled.errors, { showData }));
     return 2;
   }
-  const { message, sender, messages } = polled.value;
+  const { message, sender, messages, offer } = polled.value;
 
   // Mailbox depth for triage. On a peek/empty result this tells the agent how
   // many more are waiting; best-effort (a count failure does not fail the poll).
@@ -582,6 +597,7 @@ export function runMessagePollCommand(opts: MessagePollCommandOptions): number {
           message: entry.message,
           ...(entry.sender !== undefined ? { sender: entry.sender } : {}),
         })),
+        ...(offer !== undefined ? { offer } : {}),
         waiting,
         poll_ms: pollMs,
         mine_queued_1h: mineQueued1h,
@@ -593,7 +609,11 @@ export function runMessagePollCommand(opts: MessagePollCommandOptions): number {
     out('(no messages)');
     return 0;
   }
-  const peekTag = opts.peek === true ? ' (peek — not consumed)' : '';
+  const peekTag = opts.peek === true
+    ? ' (peek — not consumed)'
+    : opts.offer === true
+      ? ' (offered — awaiting adapter settlement)'
+      : '';
   for (const entry of messages) {
     const senderBits: string[] = [];
     if (entry.sender?.worktree !== undefined) senderBits.push(`worktree ${entry.sender.worktree}`);
@@ -611,9 +631,47 @@ export function runMessagePollCommand(opts: MessagePollCommandOptions): number {
   // many others remain, so the threshold differs by the shown count between
   // the two modes.
   if (typeof waiting === 'number') {
-    const others = opts.peek === true ? waiting - messages.length : waiting;
+    const others = opts.peek === true || opts.offer === true ? waiting - messages.length : waiting;
     if (others > 0) out(`(${others} more message(s) waiting)`);
   }
+  return 0;
+}
+
+export interface MessageSettleCommandOptions extends BaseCommandOptions {
+  readonly offerId: string;
+  readonly me?: string;
+  readonly outcome: 'delivered' | 'released';
+  readonly json?: boolean;
+}
+
+/** `caws message settle` — settle one exact automatic-delivery offer. */
+export function runMessageSettleCommand(opts: MessageSettleCommandOptions): number {
+  const { cwd, env, out, err, showData } = defaults(opts);
+  const rootResult = resolveRepoRoot(cwd);
+  if (!rootResult.ok) {
+    err('caws message settle: failed to resolve repo root.');
+    err(renderDiagnostics(rootResult.errors, { showData }));
+    return 2;
+  }
+  if (opts.offerId.length === 0 || (opts.outcome !== 'delivered' && opts.outcome !== 'released')) {
+    err('caws message settle: requires <offer_id> and --outcome delivered|released.');
+    return 1;
+  }
+  const me = resolveMe('settle', rootResult.value.cawsDir, cwd, env, opts.me, err, showData);
+  if (me === null) return 1;
+  const settled = settleMessageOffer(
+    rootResult.value.cawsDir,
+    opts.offerId,
+    me,
+    opts.outcome
+  );
+  if (!settled.ok) {
+    err('caws message settle: offer was not settled.');
+    err(renderDiagnostics(settled.errors, { showData }));
+    return 1;
+  }
+  if (opts.json === true) out(JSON.stringify({ ok: true, settlement: settled.value }));
+  else out(`${settled.value.outcome} offer ${settled.value.offerId}`);
   return 0;
 }
 
