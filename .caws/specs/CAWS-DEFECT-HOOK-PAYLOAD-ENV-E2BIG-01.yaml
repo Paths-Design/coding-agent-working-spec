@@ -76,3 +76,7 @@ evidence:
     status: pass
     evidence_ref: "Large-payload case reports truncated=1 with inline_input_len=0 and inline_response_len=0: consumers cannot read a partial value as complete. Scalar extraction still works from the file (tool_name=Bash, command=git status)."
     recorded_at: "2026-09-10T23:05:56.364Z"
+  - criterion_id: A5
+    status: pass
+    evidence_ref: "Fail-open path returns to inline on mktemp/write failure; existing parse-input.bats 'malformed dispatcher payload fails open' case 4/4 remains green and the full bats hook suite passes."
+    recorded_at: "2026-09-10T23:05:57.209Z"
