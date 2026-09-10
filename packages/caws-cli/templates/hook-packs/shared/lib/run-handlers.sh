@@ -43,9 +43,18 @@
 #                           each handler invocation. Does not affect exit codes
 #                           or stdout behavior.
 #                           (Legacy alias: CLAUDE_HOOK_TIMING is also accepted.)
+#   CAWS_HOOK_ADVISORY_BUDGET_BYTES
+#                         — maximum bytes for composed whole-card
+#                           additionalContext members (default 32768).
+#   CAWS_HOOK_SETTLEMENT_FILE
+#                         — machine-adapter-owned manifest receiving selected or
+#                           released message-offer membership. Presence enables
+#                           per-handler offer sidecars; it never grants a guard
+#                           new control authority.
 #
-# Stdout: the last non-empty buffer written to a handler's stdout is forwarded
-#         to run_handlers' caller's stdout ("last wins").
+# Stdout: hard control decisions retain precedence. Valid additionalContext
+#         members compose in handler order as whole cards under the byte budget;
+#         other non-empty envelopes retain the existing priority selection.
 #
 # Return value: the maximum exit code across all handlers (or 2 immediately if
 #               --short-circuit-on-block is set and any handler exits 2). When
