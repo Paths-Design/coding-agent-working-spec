@@ -111,28 +111,33 @@ composed_bytes() {
 @test "advisory budget: multi-byte content does not overshoot the byte budget" {
   local fake_hooks
   fake_hooks="$(mktemp -d "${TMPDIR:-/tmp}/caws-bats-rh-utf8-XXXXXX")"
-  # 'é' is 2 bytes in UTF-8. A character-indexed cut would emit twice the byte
-  # budget; the composer must measure and cut in bytes.
+  # 400 emoji at 4 bytes each = 1600 bytes. A character-indexed cut would emit
+  # hundreds of characters, far over the byte budget; the composer must measure
+  # and cut in bytes. The budget is deliberately large enough that a card IS
+  # emitted: a budget that emits nothing would pass this test vacuously.
   cat > "$fake_hooks/utf8.sh" <<'EOF'
 #!/usr/bin/env bash
 cat >/dev/null
-python3 -c 'import json; print(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"é"*500}}))'
+python3 -c 'import json; print(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":chr(0x1F600)*400}}))'
 EOF
   chmod +x "$fake_hooks/utf8.sh"
 
-  run env -i PATH="$PATH" LC_ALL=en_US.UTF-8 CAWS_HOOK_ADVISORY_BUDGET_BYTES=120 bash -c "
+  run env -i PATH="$PATH" LC_ALL=en_US.UTF-8 CAWS_HOOK_ADVISORY_BUDGET_BYTES=600 bash -c "
     source '$CAWS_TEST_HOOKS_DIR/lib/run-handlers.sh'
     export HOOKS_DIR='$fake_hooks' HOOK_INPUT_JSON='{}'
     out=\"\$(run_handlers utf8.sh)\"
-    ctx=\"\$(printf '%s' \"\$out\" | jq -r '.hookSpecificOutput.additionalContext')\"
+    ctx=\"\$(printf '%s' \"\$out\" | jq -r '.hookSpecificOutput.additionalContext // empty')\"
     printf 'composed_bytes=%s\n' \"\$(printf '%s' \"\$ctx\" | wc -c | tr -d ' ')\"
-    printf 'replacement_char=%s\n' \"\$(printf '%s' \"\$ctx\" | grep -c '�' || true)\"
+    printf 'content_present=%s\n' \"\$(printf '%s' \"\$ctx\" | grep -c '😀' || true)\"
+    printf 'replacement_char=%s\n' \"\$(printf '%s' \"\$ctx\" | grep -c $'\\xef\\xbf\\xbd' || true)\"
   "
   rm -rf "$fake_hooks"
 
+  # Truncation must keep real content, not strip the card to nothing.
+  assert_line 'content_present=1'
   local composed
   composed="$(composed_bytes)"
-  (( composed <= 120 )) || fail "composed $composed bytes exceeds the 120 budget"
+  (( composed <= 600 )) || fail "composed $composed bytes exceeds the 600 budget"
   # A multi-byte character must not be split into a replacement character.
   assert_line 'replacement_char=0'
 }

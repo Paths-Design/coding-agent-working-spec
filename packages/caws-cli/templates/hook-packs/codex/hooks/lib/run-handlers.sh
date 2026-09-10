@@ -327,46 +327,70 @@ run_handlers() {
           offer_action="selected"
           offer_reason="whole advisory selected within budget"
         else
-          # A card that does not fit whole may consume at most HALF the budget.
-          # A fixed reserve is not enough: with a 3000-byte budget a 2000-byte
-          # card capped at (available - 256) still took 91% of it and left a
-          # third card nothing, which is the same starvation shifted by one
-          # position. Capping a non-fitting card at share 1/2 bounds any single
-          # handler's claim on a shared resource whose other claimants are
-          # unknown at this point in the chain. A budget that cannot hold every
-          # card still omits the overflow -- that is the budget doing its job --
-          # but no single card can exhaust it.
+          # A card that does not fit whole may consume at most a 1/4 share of the
+          # budget. A fixed reserve is not enough: with a 3000-byte budget a
+          # 2000-byte card capped at (available - 256) still took 91% of it and
+          # left a third card nothing, which is the same starvation shifted by one
+          # position. Capping a non-fitting card at a share bounds any single
+          # handler's claim on a shared resource whose other claimants are unknown
+          # at this point in the chain. A budget that cannot hold every card still
+          # omits the overflow -- that is the budget doing its job -- but no single
+          # card can exhaust it.
+          #
+          # Numeric knobs are decimal-normalized before arithmetic: a value like
+          # "08" is an invalid OCTAL literal to Bash and aborts the dispatch, and
+          # an out-of-range value silently wraps. Anything unusable falls back to
+          # the default rather than failing the hook.
           local share="${CAWS_HOOK_ADVISORY_CARD_SHARE_DIVISOR:-4}"
-          [[ "$share" =~ ^[0-9]+$ ]] || share=4
+          [[ "$share" =~ ^[0-9]{1,9}$ ]] || share=4
+          share=$(( 10#$share ))
           (( share < 1 )) && share=1
-          local card_cap=$(( advisory_budget / share ))
           local floor="${CAWS_HOOK_ADVISORY_CARD_FLOOR_BYTES:-256}"
-          [[ "$floor" =~ ^[0-9]+$ ]] || floor=256
+          [[ "$floor" =~ ^[0-9]{1,9}$ ]] || floor=256
+          floor=$(( 10#$floor ))
+          local card_cap=$(( advisory_budget / share ))
           (( card_cap > available_bytes - floor )) && card_cap=$(( available_bytes - floor ))
           (( card_cap > available_bytes )) && card_cap="$available_bytes"
+          (( card_cap < 0 )) && card_cap=0
           local minimum_keep=48
+          local keep_bytes=0
           if (( card_cap >= minimum_keep )); then
             # The marker must be charged as content, and its own length depends on
             # the elided count, so size it once with a placeholder that can only
             # over-reserve (a placeholder of 8 nines is >= any reachable count).
-            local hint note_bytes elided keep_bytes
+            local hint note_bytes
             hint="… [truncated: 99999999 bytes elided]"
             note_bytes=$(_rh_byte_count "$hint")
             keep_bytes=$(( card_cap - note_bytes ))
             (( keep_bytes < 0 )) && keep_bytes=0
-          else
-            keep_bytes=0
           fi
           if (( keep_bytes >= minimum_keep )); then
-            # Substring expansion is locale-sensitive: under a UTF-8 locale the
-            # index is CHARACTERS, not bytes, which would overshoot the byte
-            # budget (and, under a byte locale, split a multi-byte character).
-            # Pin the C locale for the cut so the unit matches the accounting;
-            # LC_ALL is restored immediately.
-            local truncated_card elided marker
-            elided=$(( card_bytes - keep_bytes ))
+            # Cut in BYTES. Bash substring expansion indexes by CHARACTER in a
+            # UTF-8 locale, so the previous `${s:0:n}` emitted roughly double the
+            # byte budget for multi-byte content -- and wrapping the result in
+            # `LC_ALL=C printf` did NOT help, because the expansion had already
+            # happened. `head -c` is a byte-stream operation, so its unit matches
+            # `_rh_byte_count` by construction. It can stop mid-character, so walk
+            # back off any UTF-8 continuation byte to keep the emitted text valid,
+            # then report the bytes ACTUALLY kept rather than the bytes requested.
+            local truncated_card elided marker actual_kept last_byte
+            truncated_card="$(printf '%s' "$additional_context" | head -c "$keep_bytes")"
+            while [[ -n "$truncated_card" ]]; do
+              # `${s: -1}` is one CHARACTER: take the FIRST byte of its octal
+              # dump (the lead byte), never a whitespace-stripped concatenation
+              # of every byte, which would compare as a huge number.
+              # `od -An` right-aligns values AND wraps to several lines, so both
+              # `$1` (empty leading field) and `$NF` (last field of every line)
+              # are wrong. Collapse all whitespace to single spaces first, then
+              # take the first field: that is the lead byte of the last character.
+              last_byte="$(printf '%s' "${truncated_card: -1}" | od -An -tu1 | tr -s ' \n' ' ' | awk '{print $1}')"              [[ -n "$last_byte" ]] || break
+              (( last_byte >= 128 )) || break
+              truncated_card="${truncated_card%?}"
+            done
+            actual_kept=$(_rh_byte_count "$truncated_card")
+            elided=$(( card_bytes - actual_kept ))
             marker="… [truncated: ${elided} bytes elided]"
-            truncated_card="$(LC_ALL=C printf '%s' "${additional_context:0:keep_bytes}")${marker}"
+            truncated_card="${truncated_card}${marker}"
             if [[ -z "$advisory_context" ]]; then
               advisory_context="$truncated_card"
             else
@@ -376,7 +400,7 @@ run_handlers() {
             offer_action="selected"
             offer_reason="advisory truncated to fit remaining budget"
             printf '[%s] advisory truncated: card %s bytes = %s kept + %s elided, capped at %s (budget %s)\n' \
-              "$handler" "$card_bytes" "$keep_bytes" "$elided" "$card_cap" "$advisory_budget" >&2
+              "$handler" "$card_bytes" "$actual_kept" "$elided" "$card_cap" "$advisory_budget" >&2
           else
             # Too little room to carry content (or to leave room for the cards
             # behind this one): declining beats emitting a marker with nothing
