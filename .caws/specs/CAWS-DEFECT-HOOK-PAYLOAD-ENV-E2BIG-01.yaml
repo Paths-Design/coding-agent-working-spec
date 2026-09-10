@@ -3,6 +3,7 @@ title: 'The hook dispatcher exports the whole tool payload into the process envi
 risk_tier: 2
 mode: fix
 lifecycle_state: active
+worktree: wt-hook-payload-e2big
 created_at: '2026-09-10T22:30:00.000Z'
 updated_at: '2026-09-10T22:30:00.000Z'
 blast_radius:
