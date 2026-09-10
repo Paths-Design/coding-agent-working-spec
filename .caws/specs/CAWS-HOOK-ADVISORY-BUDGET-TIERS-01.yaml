@@ -75,3 +75,7 @@ evidence:
     status: pass
     evidence_ref: "'declined card reports its OWN size': with budget 1000 and cards 900+900 the diagnostic is 'card 900 bytes exceeds N available (budget 1000)', never the cumulative 1802, and 'whole-card budget' no longer appears. Truncation diagnostic states the full equation: 'card 9000 bytes = K kept + E elided'."
     recorded_at: "2026-09-10T23:36:52.499Z"
+  - criterion_id: A4
+    status: pass
+    evidence_ref: "Shared-core decision:block is forwarded verbatim with rc=2 and no truncation ('BLOCKED-BY-CONTROL-DECISION', rc=2, refute 'truncated'). Control decisions short-circuit before composition at priority 3, so no budget path can touch them. permissionDecision:deny reaches that priority only via the codex override, covered by existing codex-surface tests."
+    recorded_at: "2026-09-10T23:36:53.710Z"
