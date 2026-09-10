@@ -79,3 +79,7 @@ evidence:
     status: pass
     evidence_ref: "Shared-core decision:block is forwarded verbatim with rc=2 and no truncation ('BLOCKED-BY-CONTROL-DECISION', rc=2, refute 'truncated'). Control decisions short-circuit before composition at priority 3, so no budget path can touch them. permissionDecision:deny reaches that priority only via the codex override, covered by existing codex-surface tests."
     recorded_at: "2026-09-10T23:36:53.710Z"
+  - criterion_id: A5
+    status: pass
+    evidence_ref: "Budget 40 (below the 48-byte minimum keep) declines with 'optional advisory omitted' and emits composed_bytes <= 40, never a marker-only string. A1 supplementary: the marker is charged against the cap before the cut, so kept + elided reconstructs the original card exactly (e.g. 9000 = K + E asserted in the arithmetic case)."
+    recorded_at: "2026-09-10T23:36:54.901Z"
