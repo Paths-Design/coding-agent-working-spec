@@ -2,10 +2,11 @@ id: CAWS-MESSAGE-OFFER-SETTLEMENT-DELIVERY-01
 title: 'Settle auto-delivered messages only after advisory selection'
 risk_tier: 2
 mode: fix
-lifecycle_state: active
-worktree: message-offer-settlement
+lifecycle_state: closed
+resolution: completed
+closure_notes: 'Auto-closed by caws worktree merge message-offer-settlement at 7a4191e13f05b0878e6ed6b46d3124b837b7f91e'
 created_at: '2026-09-10T00:22:24.997Z'
-updated_at: '2026-09-10T03:44:30.497Z'
+updated_at: '2026-09-10T06:13:14.838Z'
 created_by_session: '01a08830-6a76-76d2-a5b8-0058ae313f3d'
 blast_radius:
   modules:
