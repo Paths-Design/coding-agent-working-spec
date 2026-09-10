@@ -239,6 +239,28 @@ describe('message offer settlement', () => {
     expect(archive).toContain('"record":"offer"');
     expect(archive).toContain('"record":"offer_settlement"');
   });
+
+  test('A2: replay ignores a stale or cross-recipient forged settlement', () => {
+    const caws = cawsDir();
+    const sent = sendMessage(caws, {
+      actor: sender, to: 'recip-1', text: 'still queued', requireLive: false,
+    });
+    const ledger = path.join(caws, 'messages.jsonl');
+    fs.appendFileSync(ledger, [
+      JSON.stringify({
+        record: 'offer', offer_id: 'forged-offer', recipient: 'recip-2',
+        deliver_ids: [sent.value.message.id], ts: '2026-01-01T00:00:00.000Z',
+        expires_at: '2026-01-01T00:00:01.000Z', mode: 'auto',
+      }),
+      JSON.stringify({
+        record: 'offer_settlement', offer_id: 'forged-offer', recipient: 'recip-2',
+        outcome: 'delivered', boundary: 'adapter_handoff', ts: '2026-01-01T00:00:02.000Z',
+      }),
+    ].join('\n') + '\n');
+
+    expect(channelHistory(caws, 'sender-1', 'recip-1').value[0].delivered).toBe(false);
+    expect(pollMessage(caws, 'recip-1', { peek: true }).value.message.text).toBe('still queued');
+  });
 });
 
 test('A1: the sender does not receive their own message', () => {

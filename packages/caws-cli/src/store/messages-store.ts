@@ -692,19 +692,29 @@ function replayMessageLedger(lines: readonly ParsedMessageLine[], nowMs = Date.n
       if (offer?.recipient === record.recipient) settlements.set(record.offer_id, record);
     }
   }
+  const messagesById = new Map(messages.map((message) => [message.id, message]));
   for (const [offerId, settlement] of settlements) {
     if (settlement.outcome !== 'delivered') continue;
     const offer = offers.get(offerId);
     if (!offer) continue;
+    const settledAt = Date.parse(settlement.ts);
+    const expiresAt = Date.parse(offer.expires_at);
+    if (!Number.isFinite(settledAt) || !Number.isFinite(expiresAt) || settledAt > expiresAt) continue;
     for (const messageId of offer.deliver_ids) {
-      if (!deliveredAt.has(messageId)) deliveredAt.set(messageId, settlement.ts);
+      const message = messagesById.get(messageId);
+      if (message?.to === offer.recipient && !deliveredAt.has(messageId)) {
+        deliveredAt.set(messageId, settlement.ts);
+      }
     }
   }
   const reserved = new Set<string>();
   for (const offer of offers.values()) {
     const expiresAt = Date.parse(offer.expires_at);
     if (settlements.has(offer.offer_id) || !Number.isFinite(expiresAt) || expiresAt <= nowMs) continue;
-    for (const messageId of offer.deliver_ids) reserved.add(messageId);
+    for (const messageId of offer.deliver_ids) {
+      const message = messagesById.get(messageId);
+      if (message?.to === offer.recipient) reserved.add(messageId);
+    }
   }
   return { messages, deliveredAt, offers, settlements, reserved };
 }
