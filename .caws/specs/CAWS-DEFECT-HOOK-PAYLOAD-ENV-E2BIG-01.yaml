@@ -68,3 +68,7 @@ evidence:
     status: pass
     evidence_ref: "Byte-exactness case: source envelope 2,000,093 bytes sha256 6f2b…, published HOOK_PAYLOAD_FILE identical length and digest; the tail marker CANARY-BYTE-EXACTNESS-0123456789 is present, so the end of a 2MB response survived, not just the head."
     recorded_at: "2026-09-10T23:05:54.680Z"
+  - criterion_id: A3
+    status: pass
+    evidence_ref: "Inline case: envelope below threshold reports truncated=0, no payload_file, and inline tool input JSON still parses (inline_valid=git status). Existing parse-input.bats 11/11 and the full bats hook suite 218/218 remain green."
+    recorded_at: "2026-09-10T23:05:55.536Z"
