@@ -33,6 +33,7 @@ const {
 
 const NOT_LIVE = 'store.messages.recipient_not_live';
 const RECIPIENT_INVALID = 'store.messages.recipient_invalid';
+const OFFER_NOT_FOUND = 'store.messages.offer_not_found';
 
 const dirs = [];
 function cawsDir() {
@@ -182,7 +183,10 @@ describe('message offer settlement', () => {
     sendMessage(caws, { actor: sender, to: 'recip-1', text: 'retry me', requireLive: false });
     const first = pollMessage(caws, 'recip-1', { offer: true, receipt: 'auto' });
 
-    expect(settleMessageOffer(caws, first.value.offer.id, 'recip-1', 'released').ok).toBe(true);
+    const released = settleMessageOffer(caws, first.value.offer.id, 'recip-1', 'released');
+    expect(released.ok).toBe(true);
+    expect(Object.hasOwn(released.value, 'boundary')).toBe(false);
+    expect(settleMessageOffer(caws, first.value.offer.id, 'recip-1', 'released').ok).toBe(false);
     const retry = pollMessage(caws, 'recip-1', { offer: true, receipt: 'auto' });
     expect(retry.value.message.text).toBe('retry me');
     expect(retry.value.offer.id).not.toBe(first.value.offer.id);
@@ -196,6 +200,8 @@ describe('message offer settlement', () => {
       const first = pollMessage(caws, 'recip-1', {
         offer: true, receipt: 'auto', offerTtlMs: 100,
       });
+      now.mockReturnValue(1_100);
+      expect(settleMessageOffer(caws, first.value.offer.id, 'recip-1', 'delivered').ok).toBe(false);
       now.mockReturnValue(1_101);
 
       const retry = pollMessage(caws, 'recip-1', { offer: true, receipt: 'auto' });
@@ -221,6 +227,28 @@ describe('message offer settlement', () => {
     expect(pollMessage(caws, 'recip-1', { peek: true }).value.message).toBeNull();
   });
 
+  test('A2: an unknown offer is a typed refusal rather than an exception', () => {
+    const caws = cawsDir();
+    const missing = settleMessageOffer(caws, 'missing-offer', 'recip-1', 'delivered');
+    expect(missing.ok).toBe(false);
+    expect(missing.errors[0].rule).toBe(OFFER_NOT_FOUND);
+  });
+
+  test('A2: an offer cannot settle if any member was delivered by another consumer', () => {
+    const caws = cawsDir();
+    sendMessage(caws, { actor: sender, to: 'recip-1', text: 'first', requireLive: false });
+    sendMessage(caws, { actor: sender, to: 'recip-1', text: 'second', requireLive: false });
+    const offered = pollMessage(caws, 'recip-1', {
+      offer: true, receipt: 'auto', drain: 2,
+    });
+    fs.appendFileSync(path.join(caws, 'messages.jsonl'), JSON.stringify({
+      record: 'delivery', deliver_id: offered.value.messages[0].message.id,
+      ts: new Date().toISOString(), mode: 'poll',
+    }) + '\n');
+
+    expect(settleMessageOffer(caws, offered.value.offer.id, 'recip-1', 'delivered').ok).toBe(false);
+  });
+
   test('A2: retention archives a delivered offer occurrence with its message', () => {
     const caws = cawsDir();
     sendMessage(caws, { actor: sender, to: 'recip-1', text: 'retain occurrence', requireLive: false });
@@ -240,26 +268,53 @@ describe('message offer settlement', () => {
     expect(archive).toContain('"record":"offer_settlement"');
   });
 
-  test('A2: replay ignores a stale or cross-recipient forged settlement', () => {
+  test('A2: replay ignores stale, predated, boundaryless, and cross-recipient settlements', () => {
     const caws = cawsDir();
-    const sent = sendMessage(caws, {
-      actor: sender, to: 'recip-1', text: 'still queued', requireLive: false,
-    });
+    const sent = ['cross recipient', 'stale', 'predated', 'boundaryless'].map((text) =>
+      sendMessage(caws, { actor: sender, to: 'recip-1', text, requireLive: false }).value.message
+    );
     const ledger = path.join(caws, 'messages.jsonl');
     fs.appendFileSync(ledger, [
       JSON.stringify({
         record: 'offer', offer_id: 'forged-offer', recipient: 'recip-2',
-        deliver_ids: [sent.value.message.id], ts: '2026-01-01T00:00:00.000Z',
+        deliver_ids: [sent[0].id], ts: '2026-01-01T00:00:00.000Z',
         expires_at: '2026-01-01T00:00:01.000Z', mode: 'auto',
       }),
       JSON.stringify({
         record: 'offer_settlement', offer_id: 'forged-offer', recipient: 'recip-2',
         outcome: 'delivered', boundary: 'adapter_handoff', ts: '2026-01-01T00:00:02.000Z',
       }),
+      JSON.stringify({
+        record: 'offer', offer_id: 'stale-offer', recipient: 'recip-1',
+        deliver_ids: [sent[1].id], ts: '2026-01-01T00:00:00.000Z',
+        expires_at: '2026-01-01T00:00:01.000Z', mode: 'auto',
+      }),
+      JSON.stringify({
+        record: 'offer_settlement', offer_id: 'stale-offer', recipient: 'recip-1',
+        outcome: 'delivered', boundary: 'adapter_handoff', ts: '2026-01-01T00:00:02.000Z',
+      }),
+      JSON.stringify({
+        record: 'offer', offer_id: 'predated-offer', recipient: 'recip-1',
+        deliver_ids: [sent[2].id], ts: '2026-01-01T00:00:01.000Z',
+        expires_at: '2026-01-01T00:00:03.000Z', mode: 'auto',
+      }),
+      JSON.stringify({
+        record: 'offer_settlement', offer_id: 'predated-offer', recipient: 'recip-1',
+        outcome: 'delivered', boundary: 'adapter_handoff', ts: '2026-01-01T00:00:00.000Z',
+      }),
+      JSON.stringify({
+        record: 'offer', offer_id: 'boundaryless-offer', recipient: 'recip-1',
+        deliver_ids: [sent[3].id], ts: '2026-01-01T00:00:00.000Z',
+        expires_at: '2030-01-01T00:00:00.000Z', mode: 'auto',
+      }),
+      JSON.stringify({
+        record: 'offer_settlement', offer_id: 'boundaryless-offer', recipient: 'recip-1',
+        outcome: 'delivered', ts: '2026-01-01T00:00:01.000Z',
+      }),
     ].join('\n') + '\n');
 
-    expect(channelHistory(caws, 'sender-1', 'recip-1').value[0].delivered).toBe(false);
-    expect(pollMessage(caws, 'recip-1', { peek: true }).value.message.text).toBe('still queued');
+    expect(channelHistory(caws, 'sender-1', 'recip-1').value.every((entry) => !entry.delivered)).toBe(true);
+    expect(inboxCount(caws, 'recip-1').value).toBe(4);
   });
 });
 

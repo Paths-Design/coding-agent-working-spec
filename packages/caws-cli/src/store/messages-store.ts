@@ -666,7 +666,9 @@ function isMessageOfferRecord(record: MessageLedgerRecord): record is MessageOff
     Array.isArray(record.deliver_ids) &&
     record.deliver_ids.length > 0 &&
     record.deliver_ids.every((id) => typeof id === 'string') &&
-    typeof record.expires_at === 'string';
+    typeof record.ts === 'string' &&
+    typeof record.expires_at === 'string' &&
+    record.mode === 'auto';
 }
 
 function isMessageOfferSettlementRecord(
@@ -675,7 +677,9 @@ function isMessageOfferSettlementRecord(
   return record.record === 'offer_settlement' &&
     typeof record.offer_id === 'string' &&
     typeof record.recipient === 'string' &&
-    (record.outcome === 'delivered' || record.outcome === 'released');
+    typeof record.ts === 'string' &&
+    (record.outcome === 'released' ||
+      (record.outcome === 'delivered' && record.boundary === 'adapter_handoff'));
 }
 
 /** Replay append-only message state. Invalid cross-offer settlements are
@@ -705,8 +709,10 @@ function replayMessageLedger(lines: readonly ParsedMessageLine[], nowMs = Date.n
     const offer = offers.get(offerId);
     if (!offer) continue;
     const settledAt = Date.parse(settlement.ts);
+    const offeredAt = Date.parse(offer.ts);
     const expiresAt = Date.parse(offer.expires_at);
-    if (!Number.isFinite(settledAt) || !Number.isFinite(expiresAt) || settledAt > expiresAt) continue;
+    if (!Number.isFinite(settledAt) || !Number.isFinite(offeredAt) ||
+        !Number.isFinite(expiresAt) || settledAt < offeredAt || settledAt > expiresAt) continue;
     for (const messageId of offer.deliver_ids) {
       const message = messagesById.get(messageId);
       if (message?.to === offer.recipient && !deliveredAt.has(messageId)) {
