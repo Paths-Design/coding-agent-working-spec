@@ -16,9 +16,12 @@
 //   - { record: 'offer_settlement', offer_id, outcome, ... }       — deliver or release offer
 //   - { record: 'refusal', id, class, to, reason, ts }            — a refused send/reply
 //
-// Delivery semantics: a message is delivered at most once (a delivery record is
-// appended when a recipient polls it) but retained in channel history forever.
-// Replay rebuilds per-recipient mailboxes excluding delivered ids — O(n).
+// Delivery semantics: an explicit poll consumes a message by appending a
+// delivery record. Automatic delivery first appends an expiring offer, then an
+// exact settlement records adapter handoff or releases the offer for retry.
+// Adapter handoff does not prove recipient visibility; an interrupted settlement
+// remains uncertain and may retry (bounded at-least-once behavior). Messages are
+// retained in channel history, and replay rebuilds recipient mailboxes — O(n).
 // Refusal records are telemetry only: best-effort, never read back for
 // delivery state, and invisible to poll/inbox/history.
 
@@ -467,7 +470,8 @@ export interface PollResult {
    * Backward-compatible alias for messages[0].sender.
    */
   readonly sender?: MessageSenderContext;
-  /** All consumed messages this poll (1..drain), critical-first then oldest-first. */
+  /** All messages returned by this poll (1..drain), critical-first then oldest-first.
+   * They are consumed immediately unless this is a peek or automatic offer. */
   readonly messages: readonly PolledMessage[];
   /** Present only for an automatic offer poll. The messages remain queued until
    * this exact, live offer is settled at the adapter-handoff boundary. */
