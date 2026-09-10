@@ -44,17 +44,22 @@
 #                           or stdout behavior.
 #                           (Legacy alias: CLAUDE_HOOK_TIMING is also accepted.)
 #   CAWS_HOOK_ADVISORY_BUDGET_BYTES
-#                         — maximum bytes for composed whole-card
-#                           additionalContext members (default 32768).
+#                         — maximum bytes for composed additionalContext
+#                           members (default 32768). Cards are admitted one at a
+#                           time against the bytes still available; a card that
+#                           does not fit is truncated to fit with an explicit
+#                           elided-byte marker, never dropped to starve later
+#                           handlers (CAWS-HOOK-ADVISORY-BUDGET-TIERS-01).
 #   CAWS_HOOK_SETTLEMENT_FILE
 #                         — machine-adapter-owned manifest receiving selected or
 #                           released message-offer membership. Presence enables
 #                           per-handler offer sidecars; it never grants a guard
 #                           new control authority.
 #
-# Stdout: hard control decisions retain precedence. Valid additionalContext
-#         members compose in handler order as whole cards under the byte budget;
-#         other non-empty envelopes retain the existing priority selection.
+# Stdout: hard control decisions retain precedence and are never truncated.
+#         Valid additionalContext members compose in handler order under the byte
+#         budget, truncated-with-marker when a card does not fit; other non-empty
+#         envelopes retain the existing priority selection.
 #
 # Return value: the maximum exit code across all handlers (or 2 immediately if
 #               --short-circuit-on-block is set and any handler exits 2). When
@@ -328,18 +333,94 @@ run_handlers() {
       local additional_context=""
       additional_context=$(_rh_additional_context "$stdout_buf" || true)
       if [[ -n "$additional_context" ]]; then
-        local candidate_context="$additional_context"
-        [[ -z "$advisory_context" ]] || candidate_context="$advisory_context"$'\n\n'"$additional_context"
-        local candidate_bytes
-        candidate_bytes=$(_rh_byte_count "$candidate_context")
-        if (( candidate_bytes <= advisory_budget )); then
-          advisory_context="$candidate_context"
+        # CAWS-HOOK-ADVISORY-BUDGET-TIERS-01. The previous check measured the
+        # CUMULATIVE candidate: one oversized card did not just omit itself, the
+        # running total never shrank and every later handler's advisory was
+        # dropped whole for that invocation. Two properties are required, and the
+        # first cut of this fix broke the second:
+        #   (i)  a card that does not fit is truncated-with-marker, not dropped;
+        #   (ii) truncation must LEAVE ROOM for the cards behind it, or it
+        #        reproduces the very starvation it was meant to remove.
+        # So truncation is capped at (available - floor), reserving
+        # CAWS_HOOK_ADVISORY_CARD_FLOOR_BYTES for later handlers. Only a final
+        # card that arrives with nothing left over is genuinely omitted, and that
+        # omission is reported with the card's OWN size.
+        local card_bytes available_bytes card_fits=0
+        card_bytes=$(_rh_byte_count "$additional_context")
+        if [[ -n "$advisory_context" ]]; then
+          available_bytes=$(( advisory_budget - $(_rh_byte_count "$advisory_context") - 2 ))
+        else
+          available_bytes="$advisory_budget"
+        fi
+        (( available_bytes < 0 )) && available_bytes=0
+        (( card_bytes <= available_bytes )) && card_fits=1
+        if (( card_fits )); then
+          if [[ -z "$advisory_context" ]]; then
+            advisory_context="$additional_context"
+          else
+            advisory_context="$advisory_context"$'\n\n'"$additional_context"
+          fi
           [[ -n "$advisory_template" ]] || advisory_template="$stdout_buf"
           offer_action="selected"
           offer_reason="whole advisory selected within budget"
         else
-          printf '[%s] optional advisory omitted: whole-card budget %s > %s bytes\n' \
-            "$handler" "$candidate_bytes" "$advisory_budget" >&2
+          # A card that does not fit whole may consume at most HALF the budget.
+          # A fixed reserve is not enough: with a 3000-byte budget a 2000-byte
+          # card capped at (available - 256) still took 91% of it and left a
+          # third card nothing, which is the same starvation shifted by one
+          # position. Capping a non-fitting card at share 1/2 bounds any single
+          # handler's claim on a shared resource whose other claimants are
+          # unknown at this point in the chain. A budget that cannot hold every
+          # card still omits the overflow -- that is the budget doing its job --
+          # but no single card can exhaust it.
+          local share="${CAWS_HOOK_ADVISORY_CARD_SHARE_DIVISOR:-4}"
+          [[ "$share" =~ ^[0-9]+$ ]] || share=4
+          (( share < 1 )) && share=1
+          local card_cap=$(( advisory_budget / share ))
+          local floor="${CAWS_HOOK_ADVISORY_CARD_FLOOR_BYTES:-256}"
+          [[ "$floor" =~ ^[0-9]+$ ]] || floor=256
+          (( card_cap > available_bytes - floor )) && card_cap=$(( available_bytes - floor ))
+          (( card_cap > available_bytes )) && card_cap="$available_bytes"
+          local minimum_keep=48
+          if (( card_cap >= minimum_keep )); then
+            # The marker must be charged as content, and its own length depends on
+            # the elided count, so size it once with a placeholder that can only
+            # over-reserve (a placeholder of 8 nines is >= any reachable count).
+            local hint note_bytes elided keep_bytes
+            hint="… [truncated: 99999999 bytes elided]"
+            note_bytes=$(_rh_byte_count "$hint")
+            keep_bytes=$(( card_cap - note_bytes ))
+            (( keep_bytes < 0 )) && keep_bytes=0
+          else
+            keep_bytes=0
+          fi
+          if (( keep_bytes >= minimum_keep )); then
+            # Substring expansion is locale-sensitive: under a UTF-8 locale the
+            # index is CHARACTERS, not bytes, which would overshoot the byte
+            # budget (and, under a byte locale, split a multi-byte character).
+            # Pin the C locale for the cut so the unit matches the accounting;
+            # LC_ALL is restored immediately.
+            local truncated_card elided marker
+            elided=$(( card_bytes - keep_bytes ))
+            marker="… [truncated: ${elided} bytes elided]"
+            truncated_card="$(LC_ALL=C printf '%s' "${additional_context:0:keep_bytes}")${marker}"
+            if [[ -z "$advisory_context" ]]; then
+              advisory_context="$truncated_card"
+            else
+              advisory_context="$advisory_context"$'\n\n'"$truncated_card"
+            fi
+            [[ -n "$advisory_template" ]] || advisory_template="$stdout_buf"
+            offer_action="selected"
+            offer_reason="advisory truncated to fit remaining budget"
+            printf '[%s] advisory truncated: card %s bytes = %s kept + %s elided, capped at %s (budget %s)\n' \
+              "$handler" "$card_bytes" "$keep_bytes" "$elided" "$card_cap" "$advisory_budget" >&2
+          else
+            # Too little room to carry content (or to leave room for the cards
+            # behind this one): declining beats emitting a marker with nothing
+            # behind it, and beats consuming the last of the budget.
+            printf '[%s] optional advisory omitted: card %s bytes exceeds %s available (budget %s)\n' \
+              "$handler" "$card_bytes" "$available_bytes" "$advisory_budget" >&2
+          fi
         fi
       elif _rh_has_additional_context_key "$stdout_buf"; then
         printf '[%s] optional advisory omitted: additionalContext must be a non-empty string\n' \
