@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 
 EVENTS = {
     'pre_tool_use': 'PreToolUse', 'post_tool_use': 'PostToolUse',
@@ -75,6 +76,37 @@ def emit_codex_result(event, result, identity):
         if not isinstance(output, dict):
             raise ValueError('Malformed Codex Stop JSON: expected an object')
     sys.stdout.buffer.write(result.stdout)
+
+
+def settle_message_offers(manifest_path, env, cwd, adapter_handoff, blocked):
+    """Settle exact offers after adapter stdout handoff; never claim visibility."""
+    latest = {}
+    try:
+        for line in Path(manifest_path).read_text().splitlines():
+            record = json.loads(line)
+            if (isinstance(record, dict) and
+                    isinstance(record.get('offer_id'), str) and
+                    isinstance(record.get('recipient'), str) and
+                    record.get('action') in {'selected', 'released'}):
+                latest[record['offer_id']] = record
+    except (OSError, ValueError, TypeError):
+        return
+    caws_bin = env.get('CAWS_BIN', 'caws')
+    for record in latest.values():
+        outcome = ('delivered' if adapter_handoff and not blocked and
+                   record['action'] == 'selected' else 'released')
+        try:
+            settled = subprocess.run(
+                [caws_bin, 'message', 'settle', record['offer_id'],
+                 '--me', record['recipient'], '--outcome', outcome, '--json'],
+                cwd=cwd, env=env, stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE, text=True, check=False)
+            if settled.returncode:
+                print('[caws machine adapter] message offer settlement deferred to expiry: ' +
+                      settled.stderr.strip(), file=sys.stderr)
+        except OSError as error:
+            print('[caws machine adapter] message offer settlement deferred to expiry: ' +
+                  str(error), file=sys.stderr)
 
 
 def system_configuration(home, canonical, runtime, surface, event):
@@ -266,6 +298,10 @@ def main():
                CAWS_SYSTEM_RUNTIME='1' if system is not None else '0',
                CAWS_ADAPTER_RUNTIME_DIGEST=identity,
                CAWS_AGENT_SURFACE=surface)
+    settlement_file = tempfile.NamedTemporaryFile(
+        prefix='caws-hook-offers-', suffix='.jsonl', delete=False)
+    settlement_file.close()
+    env['CAWS_HOOK_SETTLEMENT_FILE'] = settlement_file.name
     if system is not None:
         project_key = digest(str(canonical).encode())
         env['CAWS_MACHINE_LOG_DIR'] = str(confined(home, f'state/projects/{project_key}/logs/{surface}'))
@@ -282,10 +318,21 @@ def main():
     result = subprocess.run(['/bin/bash', str(runtime / 'dispatch.sh'), surface, event, str(hooks), *handlers],
                             cwd=root, env=env, input=json.dumps(payload).encode(),
                             stdout=subprocess.PIPE, check=False)
-    if surface == 'codex':
-        emit_codex_result(event, result, identity)
-    else:
-        sys.stdout.buffer.write(result.stdout)
+    adapter_handoff = False
+    try:
+        if surface == 'codex':
+            emit_codex_result(event, result, identity)
+        else:
+            sys.stdout.buffer.write(result.stdout)
+        sys.stdout.buffer.flush()
+        adapter_handoff = True
+    finally:
+        settle_message_offers(
+            settlement_file.name, env, root, adapter_handoff, result.returncode == 2)
+        try:
+            Path(settlement_file.name).unlink()
+        except OSError:
+            pass
     return result.returncode
 
 

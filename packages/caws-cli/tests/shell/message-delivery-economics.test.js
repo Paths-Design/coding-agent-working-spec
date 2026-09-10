@@ -12,6 +12,7 @@
  */
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
@@ -102,6 +103,28 @@ function runRenderer(pollJson, env = {}) {
   });
   return r;
 }
+
+test('offer renderer returns the exact occurrence to the dispatcher without claiming it delivered', () => {
+  const offerFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'caws-offer-render-')), 'offer.json');
+  const message = {
+    record: 'message', id: 'm-1', actor: { kind: 'agent', id: 'peer' },
+    to: 'econ-test', channel: 'econ-test::peer', text: 'offered context',
+    ts: new Date().toISOString(),
+  };
+  const result = runRenderer({
+    message,
+    messages: [{ message }],
+    waiting: 1,
+    poll_ms: 2,
+    offer: { id: 'offer-1', recipient: 'econ-test', messageIds: ['m-1'] },
+  }, { CAWS_HANDLER_OFFER_FILE: offerFile });
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain('offered context');
+  expect(result.stdout).not.toContain('1 more message');
+  expect(JSON.parse(fs.readFileSync(offerFile, 'utf8'))).toEqual({
+    id: 'offer-1', recipient: 'econ-test',
+  });
+});
 
 test('A1: the oldest critical message polls first through the CLI', () => {
   const root = mkRepo();

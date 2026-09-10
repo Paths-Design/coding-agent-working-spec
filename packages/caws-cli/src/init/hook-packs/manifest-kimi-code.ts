@@ -36,7 +36,9 @@ import type { HookPackV1 } from './types';
 // the same empty-handler-array expansion fixed in the shared pack, so a fully
 // disabled handler set for an event returns exit 0 instead of crashing with
 // "unbound variable" on bash 3.2 (macOS default /bin/bash).
-export const KIMI_CODE_PACK_VERSION = 4;
+// Version 5: CAWS-MESSAGE-OFFER-SETTLEMENT-DELIVERY-01. The Kimi runner
+// preserves bounded advisory membership while retaining deny promotion.
+export const KIMI_CODE_PACK_VERSION = 5;
 
 export const KIMI_CODE_PACK: HookPackV1 = {
   id: 'kimi-code',
