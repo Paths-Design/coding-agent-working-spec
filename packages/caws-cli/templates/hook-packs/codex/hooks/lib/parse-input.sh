@@ -66,35 +66,65 @@ else
 fi
 unset _codex_pi_shared _codex_pi_fallback
 
-parse_hook_input() {
-  # Fast path: the dispatcher already parsed the input and exported
-  # HOOK_* env vars to the handler's environment. Re-extracting from
-  # HOOK_INPUT_JSON would be a wasted python subprocess. HOOK_TOOL_NAME
-  # is the canonical "parse completed" marker -- after a completed parse
-  # it's always defined (possibly empty for malformed input), so the
-  # `${HOOK_TOOL_NAME+set}` test distinguishes "parser ran" from
-  # "handler invoked standalone and parser hasn't run yet".
-  if [[ -n "${HOOK_TOOL_NAME+set}" ]]; then
-    return 0
+# CAWS-DEFECT-HOOK-PAYLOAD-ENV-E2BIG-01. Largest payload (bytes) that may be
+# exported into the environment. Everything about a payload is serialized at
+# least twice on the way to a handler (the sanitized JSON plus the per-field
+# TOOL_*_JSON strings), so the inline ceiling is set well below any platform
+# argument-list limit rather than near it. Override with
+# CAWS_HOOK_INLINE_PAYLOAD_MAX_BYTES; set it to 0 to force file transport.
+_hook_payload_transport() {
+  local max="${CAWS_HOOK_INLINE_PAYLOAD_MAX_BYTES:-131072}"
+  [[ "$max" =~ ^[0-9]+$ ]] || max=131072
+  local bytes
+  bytes=$(LC_ALL=C printf '%s' "${HOOK_INPUT_JSON:-}" | wc -c | tr -d ' ')
+  [[ "$bytes" =~ ^[0-9]+$ ]] || bytes=0
+  if (( bytes >= max )); then
+    HOOK_PAYLOAD_TRUNCATED=1
+  else
+    HOOK_PAYLOAD_TRUNCATED=0
   fi
+  if [[ -n "${HOOK_PAYLOAD_FILE:-}" && -f "${HOOK_PAYLOAD_FILE:-}" ]]; then
+    rm -f "$HOOK_PAYLOAD_FILE" 2>/dev/null || true
+  fi
+  HOOK_PAYLOAD_FILE=""
+  export HOOK_PAYLOAD_TRUNCATED HOOK_PAYLOAD_FILE
+}
 
-  # If HOOK_INPUT_JSON is set but HOOK_TOOL_NAME is not, a caller staged
-  # the sanitized payload but didn't run the extractor. Extract now.
-  # Otherwise (standalone handler), read stdin via the sanitizer.
-  if [[ -z "${HOOK_INPUT_JSON:-}" ]]; then
-    HOOK_INPUT_JSON="$(read_hook_input_json)"
+# _write_payload_file <payload>
+# Writes the full payload to a dispatch-scoped file and exports its path.
+# Fails open: with no safe temp directory the payload stays inline for this
+# dispatch (a bounded overshoot) rather than dropping bytes or blocking the
+# tool call. Only whole payloads are ever written.
+_write_payload_file() {
+  local payload="${1:-}"
+  local dir="${TMPDIR:-/tmp}"
+  local file
+  file=$(mktemp "${dir%/}/caws-hook-payload-XXXXXX" 2>/dev/null) || {
     export HOOK_INPUT_JSON
+    HOOK_PAYLOAD_TRUNCATED=0
+    export HOOK_PAYLOAD_TRUNCATED
+    return 0
+  }
+  if printf '%s' "$payload" > "$file" 2>/dev/null; then
+    HOOK_PAYLOAD_FILE="$file"
+    if [[ -n "${CAWS_TEMP_FILES+x}" ]]; then
+      CAWS_TEMP_FILES+=("$file")
+    else
+      CAWS_TEMP_FILES=("$file")
+    fi
+    trap 'rm -f "$HOOK_PAYLOAD_FILE" 2>/dev/null || true' EXIT 2>/dev/null || true
+    export HOOK_PAYLOAD_FILE
+  else
+    rm -f "$file" 2>/dev/null || true
+    export HOOK_INPUT_JSON
+    HOOK_PAYLOAD_TRUNCATED=0
+    export HOOK_PAYLOAD_TRUNCATED
   fi
+  return 0
+}
 
-  # Extract all common scalar fields in ONE python call, emitting
-  # shlex-quoted bash assignments. Compared to 3-5 separate `jq` calls,
-  # this is one subprocess per handler instead of many. Values are sh-safe
-  # via shlex.quote, so `eval` is not a code-injection hazard.
-  #
-  # Codex-specific: applies apply_patch normalization and exports
-  # HOOK_FILE_PATHS and HOOK_ORIGINAL_TOOL_NAME.
-  local assignments
-  assignments=$(printf '%s' "$HOOK_INPUT_JSON" | python3 -c '
+_hook_extract_scalar_fields() {
+  python3 -c '
 import json
 import shlex
 import sys
@@ -170,10 +200,54 @@ fields = {
     "HOOK_TOOL_INPUT_JSON": json.dumps(tool_input),
     "HOOK_TOOL_RESPONSE_JSON": json.dumps(tool_response),
 }
-
 for k, v in fields.items():
     print(f"{k}={shlex.quote(str(v))}")
-' 2>/dev/null || true)
+' 2>/dev/null || true
+}
+
+parse_hook_input() {
+  # Fast path: the dispatcher already parsed the input and exported
+  # HOOK_* env vars to the handler's environment. Re-extracting from
+  # HOOK_INPUT_JSON would be a wasted python subprocess. HOOK_TOOL_NAME
+  # is the canonical "parse completed" marker -- after a completed parse
+  # it's always defined (possibly empty for malformed input), so the
+  # `${HOOK_TOOL_NAME+set}` test distinguishes "parser ran" from
+  # "handler invoked standalone and parser hasn't run yet".
+  if [[ -n "${HOOK_TOOL_NAME+set}" ]]; then
+    return 0
+  fi
+
+  # If HOOK_INPUT_JSON is set but HOOK_TOOL_NAME is not, a caller staged
+  # the sanitized payload but didn't run the extractor. Extract now.
+  # Otherwise (standalone handler), read stdin via the sanitizer.
+  if [[ -z "${HOOK_INPUT_JSON:-}" ]]; then
+    HOOK_INPUT_JSON="$(read_hook_input_json)"
+  fi
+
+  # CAWS-DEFECT-HOOK-PAYLOAD-ENV-E2BIG-01: bound the bytes that reach the
+  # process environment; see shared/lib/parse-input.sh for the full rationale.
+  _hook_payload_transport
+  if [[ "${HOOK_PAYLOAD_TRUNCATED:-0}" == "1" ]]; then
+    _write_payload_file "$HOOK_INPUT_JSON"
+  else
+    export -n HOOK_INPUT_JSON 2>/dev/null || true
+  fi
+
+  # Extract all common scalar fields in ONE python call, emitting
+  # shlex-quoted bash assignments. Compared to 3-5 separate `jq` calls,
+  # this is one subprocess per handler instead of many. Values are sh-safe
+  # via shlex.quote, so `eval` is not a code-injection hazard.
+  #
+  # Codex-specific: applies apply_patch normalization and exports
+  # HOOK_FILE_PATHS and HOOK_ORIGINAL_TOOL_NAME. A file-transported payload is
+  # read from HOOK_PAYLOAD_FILE inside a subshell so the bytes never enter this
+  # shell's exported environment.
+  local assignments
+  if [[ "${HOOK_PAYLOAD_TRUNCATED:-0}" == "1" && -n "${HOOK_PAYLOAD_FILE:-}" ]]; then
+    assignments=$(_hook_extract_scalar_fields < "$HOOK_PAYLOAD_FILE")
+  else
+    assignments=$(printf '%s' "$HOOK_INPUT_JSON" | _hook_extract_scalar_fields)
+  fi
 
   # Fail-open: if the python subprocess failed for any reason, leave
   # HOOK_* vars unset/empty. Handlers will see empty tool_name and
@@ -196,9 +270,23 @@ for k, v in fields.items():
          HOOK_SOURCE="${HOOK_SOURCE:-}" \
          HOOK_PERMISSION_MODE="${HOOK_PERMISSION_MODE:-default}" \
          HOOK_TOOL_USE_ID="${HOOK_TOOL_USE_ID:-}" \
-         HOOK_STOP_HOOK_ACTIVE="${HOOK_STOP_HOOK_ACTIVE:-0}" \
-         HOOK_TOOL_INPUT_JSON="${HOOK_TOOL_INPUT_JSON:-{\}}" \
-         HOOK_TOOL_RESPONSE_JSON="${HOOK_TOOL_RESPONSE_JSON:-{\}}"
+         HOOK_STOP_HOOK_ACTIVE="${HOOK_STOP_HOOK_ACTIVE:-0}"
+
+  # In file-transport mode the full tool input/response JSON is deliberately not
+  # exported: those are the unbounded-size variables, and a reader that needs
+  # them reads HOOK_PAYLOAD_FILE. Empty plus HOOK_PAYLOAD_TRUNCATED=1 makes the
+  # absence explicit rather than a partial value presented as complete. Scalars
+  # are extracted from the file and always exported so matcher predicates work.
+  local _inline_tool_json=1
+  [[ "${HOOK_PAYLOAD_TRUNCATED:-0}" == "1" ]] && _inline_tool_json=0
+  if (( _inline_tool_json )); then
+    export HOOK_TOOL_INPUT_JSON="${HOOK_TOOL_INPUT_JSON:-{\}}" \
+           HOOK_TOOL_RESPONSE_JSON="${HOOK_TOOL_RESPONSE_JSON:-{\}}"
+  else
+    HOOK_TOOL_INPUT_JSON=""
+    HOOK_TOOL_RESPONSE_JSON=""
+    export HOOK_TOOL_INPUT_JSON HOOK_TOOL_RESPONSE_JSON
+  fi
 
   # CAWS-SESSION-ID-DURABLE-HOOK-ENVELOPE-001: write/refresh the
   # durable session envelope so agent-Bash CLI invocations (which
