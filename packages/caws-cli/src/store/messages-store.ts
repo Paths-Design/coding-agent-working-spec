@@ -649,6 +649,7 @@ function readMessageLines(cawsDir: string): Result<{ readonly lines: ParsedMessa
 interface MessageLedgerState {
   readonly messages: readonly MessageRecord[];
   readonly deliveredAt: ReadonlyMap<string, string>;
+  readonly latestDeliveredAt: ReadonlyMap<string, string>;
   readonly offers: ReadonlyMap<string, MessageOfferRecord>;
   readonly settlements: ReadonlyMap<string, MessageOfferSettlementRecord>;
   readonly reserved: ReadonlySet<string>;
@@ -678,13 +679,15 @@ function isMessageOfferSettlementRecord(
 function replayMessageLedger(lines: readonly ParsedMessageLine[], nowMs = Date.now()): MessageLedgerState {
   const messages: MessageRecord[] = [];
   const deliveredAt = new Map<string, string>();
+  const latestDeliveredAt = new Map<string, string>();
   const offers = new Map<string, MessageOfferRecord>();
   const settlements = new Map<string, MessageOfferSettlementRecord>();
   for (const entry of lines) {
     const record = entry.parsed;
     if (record?.record === 'message') messages.push(record);
-    else if (record?.record === 'delivery' && !deliveredAt.has(record.deliver_id)) {
-      deliveredAt.set(record.deliver_id, record.ts);
+    else if (record?.record === 'delivery') {
+      if (!deliveredAt.has(record.deliver_id)) deliveredAt.set(record.deliver_id, record.ts);
+      latestDeliveredAt.set(record.deliver_id, record.ts);
     } else if (record && isMessageOfferRecord(record) && !offers.has(record.offer_id)) {
       offers.set(record.offer_id, record);
     } else if (record && isMessageOfferSettlementRecord(record) && !settlements.has(record.offer_id)) {
@@ -705,6 +708,7 @@ function replayMessageLedger(lines: readonly ParsedMessageLine[], nowMs = Date.n
       if (message?.to === offer.recipient && !deliveredAt.has(messageId)) {
         deliveredAt.set(messageId, settlement.ts);
       }
+      if (message?.to === offer.recipient) latestDeliveredAt.set(messageId, settlement.ts);
     }
   }
   const reserved = new Set<string>();
@@ -716,7 +720,7 @@ function replayMessageLedger(lines: readonly ParsedMessageLine[], nowMs = Date.n
       if (message?.to === offer.recipient) reserved.add(messageId);
     }
   }
-  return { messages, deliveredAt, offers, settlements, reserved };
+  return { messages, deliveredAt, latestDeliveredAt, offers, settlements, reserved };
 }
 
 function messageEntry(message: MessageRecord, delivered: boolean, state: 'candidate' | 'skipped', reason: string): MessagePruneEntry {
@@ -1298,7 +1302,7 @@ export function getMessageDeliveryState(cawsDir: string, messageId: string): Res
   if (!loaded.ok) return err(loaded.errors);
   const state = replayMessageLedger(loaded.value.lines);
   const target = state.messages.find((message) => message.id === messageId) ?? null;
-  const deliveredAt = state.deliveredAt.get(messageId);
+  const deliveredAt = state.latestDeliveredAt.get(messageId);
   if (target === null) return ok(null);
   return ok({
     message: target,
