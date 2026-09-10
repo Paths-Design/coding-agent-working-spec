@@ -1,0 +1,56 @@
+id: CAWS-MESSAGE-OFFER-SETTLEMENT-DELIVERY-01
+title: 'Settle auto-delivered messages only after advisory selection'
+risk_tier: 2
+mode: fix
+lifecycle_state: draft
+created_at: '2026-09-10T00:22:24.997Z'
+updated_at: '2026-09-10T00:22:24.997Z'
+created_by_session: '01a08830-6a76-76d2-a5b8-0058ae313f3d'
+blast_radius:
+  modules:
+    - 'message store offer/ack/release state'
+    - 'hook advisory composition and settlement'
+  data_migration: false
+operational_rollback_slo: 5m
+scope:
+  in:
+    - 'packages/caws-cli/src/store/messages-store.ts'
+    - 'packages/caws-cli/src/store/index.ts'
+    - 'packages/caws-cli/src/kernel/schemas/messages.v1.json'
+    - 'packages/caws-cli/src/shell/commands/message.ts'
+    - 'packages/caws-cli/src/shell/register.ts'
+    - 'packages/caws-cli/src/shell/command-metadata.ts'
+    - 'packages/caws-cli/templates/hook-packs/shared/agent-heartbeat.sh'
+    - 'packages/caws-cli/templates/hook-packs/shared/lib/run-handlers.sh'
+    - 'packages/caws-cli/templates/hook-packs/codex/hooks/lib/run-handlers.sh'
+    - 'packages/caws-cli/src/init/hook-packs/manifest-shared.ts'
+    - 'packages/caws-cli/tests/store/messages-store.test.js'
+    - 'packages/caws-cli/tests/store/messages-behavior-store.test.js'
+    - 'packages/caws-cli/tests/shell/message-command.test.js'
+    - 'packages/caws-cli/tests/shell/message-delivery-economics.test.js'
+    - 'packages/caws-cli/tests/hooks/'
+  out: []
+invariants:
+  - 'Polling for automatic delivery cannot mark a message delivered before the composed dispatcher selects its advisory member.'
+  - 'Guard decisions remain independent from bounded advisory context aggregation.'
+acceptance:
+  - id: A1
+    given: 'The spec implementation is complete.'
+    when: 'The acceptance statement is evaluated.'
+    then: 'given two valid advisory handlers; when both fit the bounded composition; then both members survive and only selected message offers settle'
+  - id: A2
+    given: 'The spec implementation is complete.'
+    when: 'The acceptance statement is evaluated.'
+    then: 'given a crash release retry concurrent offer or replayed acknowledgment; when the delivery protocol runs; then reservations preserve exclusivity and only the matching live occurrence can settle'
+  - id: A3
+    given: 'The spec implementation is complete.'
+    when: 'The acceptance statement is evaluated.'
+    then: 'given guard outcomes and malformed or oversized optional advisories; when handlers compose; then control decisions remain unchanged and optional members omit without gaining denial authority'
+non_functional: {}
+contracts:
+  - name: 'message-offer-settlement'
+    type: behavior
+    path: 'packages/caws-cli/src/store/messages-store.ts'
+  - name: 'hook-advisory-composition'
+    type: behavior
+    path: 'packages/caws-cli/templates/hook-packs/shared/lib/run-handlers.sh'
