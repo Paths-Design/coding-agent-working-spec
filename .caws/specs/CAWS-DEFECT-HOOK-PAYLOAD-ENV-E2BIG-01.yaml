@@ -64,3 +64,7 @@ evidence:
     status: pass
     evidence_ref: "bats parse-input-payload-transport case 'a 2MB tool response does not fail the dispatch with E2BIG': 2,000,000-byte tool_response through the installed pre-tool dispatcher exits clean with no 'Argument list too long' and no 'Required runtime library failed: session-id.sh'. Same payload shape (a 2.3MB base64 PNG) failed under the pre-fix parser at agent-surface.sh:412."
     recorded_at: "2026-09-10T23:05:53.095Z"
+  - criterion_id: A2
+    status: pass
+    evidence_ref: "Byte-exactness case: source envelope 2,000,093 bytes sha256 6f2b…, published HOOK_PAYLOAD_FILE identical length and digest; the tail marker CANARY-BYTE-EXACTNESS-0123456789 is present, so the end of a 2MB response survived, not just the head."
+    recorded_at: "2026-09-10T23:05:54.680Z"
