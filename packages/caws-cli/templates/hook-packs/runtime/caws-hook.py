@@ -315,11 +315,12 @@ def main():
     env['CAWS_SESSION_TRANSCRIPT_ADAPTER'] = next((str(p) for p in adapter_candidates if p.is_file()), '')
     env['PYTHONDONTWRITEBYTECODE'] = '1'
     payload['hook_event_name'] = EVENTS[event]
-    result = subprocess.run(['/bin/bash', str(runtime / 'dispatch.sh'), surface, event, str(hooks), *handlers],
-                            cwd=root, env=env, input=json.dumps(payload).encode(),
-                            stdout=subprocess.PIPE, check=False)
+    result = None
     adapter_handoff = False
     try:
+        result = subprocess.run(['/bin/bash', str(runtime / 'dispatch.sh'), surface, event, str(hooks), *handlers],
+                                cwd=root, env=env, input=json.dumps(payload).encode(),
+                                stdout=subprocess.PIPE, check=False)
         if surface == 'codex':
             emit_codex_result(event, result, identity)
         else:
@@ -327,8 +328,10 @@ def main():
         sys.stdout.buffer.flush()
         adapter_handoff = True
     finally:
-        settle_message_offers(
-            settlement_file.name, env, root, adapter_handoff, result.returncode == 2)
+        if result is not None:
+            settle_message_offers(
+                settlement_file.name, env, root, adapter_handoff,
+                result.returncode == 2)
         try:
             Path(settlement_file.name).unlink()
         except OSError:
