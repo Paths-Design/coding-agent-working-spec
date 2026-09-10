@@ -71,3 +71,7 @@ evidence:
     status: pass
     evidence_ref: "Multi-byte case under LC_ALL=en_US.UTF-8: 500x 'é' (1000 bytes) against budget 120 emits composed_bytes <= 120 and replacement_char=0, because accounting and the substring cut both run in the C locale so the unit is bytes and no character is split. First cut emitted 167 bytes for a 100-byte budget; falsified by review, now fixed."
     recorded_at: "2026-09-10T23:36:51.280Z"
+  - criterion_id: A3
+    status: pass
+    evidence_ref: "'declined card reports its OWN size': with budget 1000 and cards 900+900 the diagnostic is 'card 900 bytes exceeds N available (budget 1000)', never the cumulative 1802, and 'whole-card budget' no longer appears. Truncation diagnostic states the full equation: 'card 9000 bytes = K kept + E elided'."
+    recorded_at: "2026-09-10T23:36:52.499Z"
