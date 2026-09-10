@@ -67,3 +67,7 @@ evidence:
     status: pass
     evidence_ref: "7/7 bats in run-handlers-advisory-budget.bats. 'THIRD card is still admitted': budget 3000 with cards 1000+2000+1000 (total exactly fits) — greedy admission let the oversized 2000-byte card take every remaining byte and starve card 3; with the 1/4 share cap all three appear (has_A=1 has_B=1 has_C=1) and composed_bytes <= 3000. An adversarial headless codex review REJECTED the first cut on exactly this defect; the fix is the share cap plus CAWS_HOOK_ADVISORY_CARD_FLOOR_BYTES."
     recorded_at: "2026-09-10T23:36:50.185Z"
+  - criterion_id: A2
+    status: pass
+    evidence_ref: "Multi-byte case under LC_ALL=en_US.UTF-8: 500x 'é' (1000 bytes) against budget 120 emits composed_bytes <= 120 and replacement_char=0, because accounting and the substring cut both run in the C locale so the unit is bytes and no character is split. First cut emitted 167 bytes for a 100-byte budget; falsified by review, now fixed."
+    recorded_at: "2026-09-10T23:36:51.280Z"
