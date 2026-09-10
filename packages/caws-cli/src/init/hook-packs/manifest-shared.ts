@@ -394,7 +394,15 @@ import { isAdapterCoveredSurface } from './types';
 // now reserves an expiring offer and settles it only after bounded advisory
 // composition reaches the adapter-handoff boundary. Same-priority advisory
 // cards compose whole under budget while guard decisions retain precedence.
-export const SHARED_PACK_VERSION = 64;
+//
+// v65 (CAWS-DEFECT-HOOK-PAYLOAD-ENV-E2BIG-01): parse-input.sh no longer exports
+// the whole sanitized payload into the process environment. Payloads at or above
+// CAWS_HOOK_INLINE_PAYLOAD_MAX_BYTES (default 131072) move to a dispatch-scoped
+// file referenced by HOOK_PAYLOAD_FILE, with HOOK_PAYLOAD_TRUNCATED=1 and empty
+// inline TOOL_*_JSON marking the inline representation absent by design. A
+// multi-megabyte tool response previously pushed the environment past ARG_MAX and
+// every dispatch fork died with `Argument list too long`.
+export const SHARED_PACK_VERSION = 65;
 
 /**
  * The vendored TELEMETRY rows: the turn-log fold (session-log.sh +

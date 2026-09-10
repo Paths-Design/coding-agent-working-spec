@@ -61,7 +61,12 @@ import type { HookPackV1 } from './types';
 // "unbound variable" on bash 3.2 (macOS default /bin/bash).
 // Version 19: CAWS-MESSAGE-OFFER-SETTLEMENT-DELIVERY-01. The Codex runner
 // preserves bounded advisory membership while retaining deny/rewrite control.
-export const CODEX_PACK_VERSION = 19;
+// Version 20: CAWS-DEFECT-HOOK-PAYLOAD-ENV-E2BIG-01. The Codex parser override
+// (hooks/lib/parse-input.sh) adopts the bounded payload transport: a payload at
+// or above CAWS_HOOK_INLINE_PAYLOAD_MAX_BYTES is written to a dispatch-scoped
+// file instead of the process environment, and apply_patch normalization still
+// runs against the full payload read from that file.
+export const CODEX_PACK_VERSION = 20;
 
 export const CODEX_PACK: HookPackV1 = {
   id: 'codex',
