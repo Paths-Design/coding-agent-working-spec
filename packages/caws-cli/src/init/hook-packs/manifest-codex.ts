@@ -59,7 +59,9 @@ import type { HookPackV1 } from './types';
 // same empty-handler-array expansion fixed in the shared pack, so a fully
 // disabled handler set for an event returns exit 0 instead of crashing with
 // "unbound variable" on bash 3.2 (macOS default /bin/bash).
-export const CODEX_PACK_VERSION = 18;
+// Version 19: CAWS-MESSAGE-OFFER-SETTLEMENT-DELIVERY-01. The Codex runner
+// preserves bounded advisory membership while retaining deny/rewrite control.
+export const CODEX_PACK_VERSION = 19;
 
 export const CODEX_PACK: HookPackV1 = {
   id: 'codex',

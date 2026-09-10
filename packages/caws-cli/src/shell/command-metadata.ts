@@ -1874,7 +1874,32 @@ export const MESSAGE_COMMAND_META: GroupCommandMeta = {
           description:
             'Consume up to n messages in one poll (1..10, default 1), critical-first then oldest-first — backlog coalescing for the auto-delivery hook (CAWS-MESSAGE-DELIVERY-ECONOMICS-001).',
         },
+        {
+          flag: '--offer',
+          description: 'Reserve automatic-delivery candidates for later settlement instead of consuming on poll',
+        },
+        {
+          flag: '--offer-ttl-ms <ms>',
+          description: 'Offer lifetime in milliseconds (bounded to 1..300000; default 30000)',
+        },
         { flag: '--json', description: 'Emit JSON ({message, messages, sender?, waiting, poll_ms}) instead of human text' },
+        DATA_OPTION,
+      ],
+    },
+    {
+      kind: 'leaf',
+      name: 'settle',
+      description:
+        'Settle one exact live automatic-delivery offer. Delivered means successful adapter handoff, not recipient visibility; released offers may retry.',
+      argument: {
+        name: 'offer_id',
+        required: true,
+        description: 'Exact offer occurrence id returned by message poll --offer',
+      },
+      options: [
+        { flag: '--me <session_id>', description: 'Recipient bound into the offer (default: this session id)' },
+        { flag: '--outcome <delivered|released>', description: 'Settlement outcome (default: delivered)' },
+        { flag: '--json', description: 'Emit JSON ({ok, settlement})' },
         DATA_OPTION,
       ],
     },

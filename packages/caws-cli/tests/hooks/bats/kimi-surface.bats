@@ -222,6 +222,22 @@ SPY
   assert_output "3|3|1"
 }
 
+@test "kimi run-handlers: same-priority advisories compose without weakening deny semantics" {
+  local fake_hooks
+  fake_hooks="$(mktemp -d "${TMPDIR:-/tmp}/caws-bats-kimi-rh-XXXXXX")"
+  printf '#!/bin/bash\necho '\''{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"one"}}'\''\n' > "$fake_hooks/one.sh"
+  printf '#!/bin/bash\necho '\''{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"two"}}'\''\n' > "$fake_hooks/two.sh"
+  chmod +x "$fake_hooks/one.sh" "$fake_hooks/two.sh"
+  run env -i PATH="$PATH" bash -c "
+    source '$KIMI_VENDOR_DIR/hooks/lib/run-handlers.sh'
+    export HOOKS_DIR='$fake_hooks' HOOK_INPUT_JSON='{}'
+    run_handlers one.sh two.sh | jq -r '.hookSpecificOutput.additionalContext'
+  "
+  rm -rf "$fake_hooks"
+  assert_success
+  assert_output $'one\n\ntwo'
+}
+
 @test "kimi run-handlers: a handler exiting 1 is promoted to the blocking exit 2" {
   # Kimi has no non-blocking error tier (verified live: a PreToolUse hook
   # exiting 1 does NOT stop the tool call). The override must promote the

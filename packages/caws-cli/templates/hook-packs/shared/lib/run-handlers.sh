@@ -43,9 +43,18 @@
 #                           each handler invocation. Does not affect exit codes
 #                           or stdout behavior.
 #                           (Legacy alias: CLAUDE_HOOK_TIMING is also accepted.)
+#   CAWS_HOOK_ADVISORY_BUDGET_BYTES
+#                         — maximum bytes for composed whole-card
+#                           additionalContext members (default 32768).
+#   CAWS_HOOK_SETTLEMENT_FILE
+#                         — machine-adapter-owned manifest receiving selected or
+#                           released message-offer membership. Presence enables
+#                           per-handler offer sidecars; it never grants a guard
+#                           new control authority.
 #
-# Stdout: the last non-empty buffer written to a handler's stdout is forwarded
-#         to run_handlers' caller's stdout ("last wins").
+# Stdout: hard control decisions retain precedence. Valid additionalContext
+#         members compose in handler order as whole cards under the byte budget;
+#         other non-empty envelopes retain the existing priority selection.
 #
 # Return value: the maximum exit code across all handlers (or 2 immediately if
 #               --short-circuit-on-block is set and any handler exits 2). When
@@ -92,6 +101,46 @@ _rh_stdout_priority() {
     ask) printf '2\n' ;;
     *) printf '1\n' ;;
   esac
+}
+
+_rh_additional_context() {
+  printf '%s' "$1" | jq -er '
+    .hookSpecificOutput.additionalContext |
+    select(type == "string")
+  ' 2>/dev/null
+}
+
+_rh_has_additional_context_key() {
+  printf '%s' "$1" | jq -e '
+    (.hookSpecificOutput | type == "object") and
+    (.hookSpecificOutput | has("additionalContext"))
+  ' >/dev/null 2>&1
+}
+
+_rh_merge_additional_context() {
+  local envelope="$1"
+  local context="$2"
+  printf '%s' "$envelope" | jq -c --arg context "$context" '
+    if type == "object" and (.hookSpecificOutput | type == "object") then
+      .hookSpecificOutput.additionalContext = $context
+    else empty end
+  ' 2>/dev/null
+}
+
+_rh_byte_count() {
+  LC_ALL=C printf '%s' "$1" | wc -c | tr -d ' '
+}
+
+_rh_record_offer() {
+  local offer_file="$1"
+  local action="$2"
+  local handler="$3"
+  local reason="$4"
+  [[ -n "${CAWS_HOOK_SETTLEMENT_FILE:-}" && -s "$offer_file" ]] || return 0
+  jq -c --arg action "$action" --arg handler "$handler" --arg reason "$reason" '
+    select(type == "object" and (.id | type == "string") and (.recipient | type == "string")) |
+    {offer_id: .id, recipient, action: $action, handler: $handler, reason: $reason}
+  ' "$offer_file" >> "$CAWS_HOOK_SETTLEMENT_FILE" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------
@@ -153,8 +202,12 @@ run_handlers() {
   _rh_is_truthy "${CAWS_HOOK_TIMING:-${CLAUDE_HOOK_TIMING:-}}" && timing=1
 
   local max_exit=0
-  local last_stdout=""
-  local last_stdout_priority=0
+  local base_stdout=""
+  local base_stdout_priority=0
+  local advisory_template=""
+  local advisory_context=""
+  local advisory_budget="${CAWS_HOOK_ADVISORY_BUDGET_BYTES:-32768}"
+  [[ "$advisory_budget" =~ ^[0-9]+$ ]] || advisory_budget=32768
 
   # Snapshot the outer $@ into an array so `set --` inside the loop can safely
   # clobber positional params without breaking iteration. Using "$@" directly
@@ -219,10 +272,19 @@ run_handlers() {
 
     local stderr_file
     stderr_file=$(mktemp)
+    local handler_offer_file=""
+    if [[ -n "${CAWS_HOOK_SETTLEMENT_FILE:-}" ]]; then
+      handler_offer_file=$(mktemp)
+      export CAWS_HANDLER_OFFER_FILE="$handler_offer_file"
+    else
+      unset CAWS_HANDLER_OFFER_FILE 2>/dev/null || true
+    fi
     local stdout_buf
     stdout_buf=$(printf '%s' "$HOOK_INPUT_JSON" \
                   | "$handler_path" "$@" 2>"$stderr_file")
     local exit_code=$?
+    local offer_action="released"
+    local offer_reason="handler output was not selected"
 
     local t_elapsed=0
     if (( timing )); then
@@ -250,25 +312,50 @@ run_handlers() {
       exit_code=0
     fi
 
-    # Accumulate stdout. Structured block/ask decisions outrank lower-priority
-    # hook context so a later handler cannot accidentally erase a safety
-    # boundary emitted by an earlier handler.
+    # Control decisions and advisory membership are independent. Hard blocks
+    # retain immediate precedence. Valid additionalContext cards aggregate as
+    # whole members under a byte budget; malformed/oversized optional members
+    # are omitted without acquiring denial authority.
     if [[ -n "$stdout_buf" ]]; then
       local stdout_priority
       stdout_priority=$(_rh_stdout_priority "$stdout_buf")
       if [[ "$stdout_priority" -eq 3 ]]; then
+        _rh_record_offer "$handler_offer_file" "released" "$handler" "hard control decision omitted advisories"
+        [[ -z "$handler_offer_file" ]] || rm -f "$handler_offer_file"
         printf '%s\n' "$stdout_buf"
         return 2
       fi
-      if [[ "$stdout_priority" -ge "$last_stdout_priority" ]]; then
-        last_stdout="$stdout_buf"
-        last_stdout_priority="$stdout_priority"
+      local additional_context=""
+      additional_context=$(_rh_additional_context "$stdout_buf" || true)
+      if [[ -n "$additional_context" ]]; then
+        local candidate_context="$additional_context"
+        [[ -z "$advisory_context" ]] || candidate_context="$advisory_context"$'\n\n'"$additional_context"
+        local candidate_bytes
+        candidate_bytes=$(_rh_byte_count "$candidate_context")
+        if (( candidate_bytes <= advisory_budget )); then
+          advisory_context="$candidate_context"
+          [[ -n "$advisory_template" ]] || advisory_template="$stdout_buf"
+          offer_action="selected"
+          offer_reason="whole advisory selected within budget"
+        else
+          printf '[%s] optional advisory omitted: whole-card budget %s > %s bytes\n' \
+            "$handler" "$candidate_bytes" "$advisory_budget" >&2
+        fi
+      elif _rh_has_additional_context_key "$stdout_buf"; then
+        printf '[%s] optional advisory omitted: additionalContext must be a non-empty string\n' \
+          "$handler" >&2
+      elif [[ "$stdout_priority" -ge "$base_stdout_priority" ]]; then
+        base_stdout="$stdout_buf"
+        base_stdout_priority="$stdout_priority"
       fi
     fi
+    _rh_record_offer "$handler_offer_file" "$offer_action" "$handler" "$offer_reason"
+    [[ -z "$handler_offer_file" ]] || rm -f "$handler_offer_file"
+    unset CAWS_HANDLER_OFFER_FILE 2>/dev/null || true
 
     # Short-circuit on blocking exit (exit 2), unless dry-run zeroed it.
     if (( short_circuit )) && [[ "$exit_code" -eq 2 ]]; then
-      [[ -n "$last_stdout" ]] && printf '%s\n' "$last_stdout"
+      [[ -n "$base_stdout" ]] && printf '%s\n' "$base_stdout"
       return 2
     fi
 
@@ -279,7 +366,19 @@ run_handlers() {
 
   fi
 
-  [[ -n "$last_stdout" ]] && printf '%s\n' "$last_stdout"
+  local composed_stdout="$base_stdout"
+  if [[ -n "$advisory_context" ]]; then
+    if [[ -n "$base_stdout" ]]; then
+      composed_stdout=$(_rh_merge_additional_context "$base_stdout" "$advisory_context" || true)
+      if [[ -z "$composed_stdout" ]]; then
+        printf '[run-handlers] optional advisories omitted: selected control envelope cannot carry additionalContext\n' >&2
+        composed_stdout="$base_stdout"
+      fi
+    else
+      composed_stdout=$(_rh_merge_additional_context "$advisory_template" "$advisory_context" || true)
+    fi
+  fi
+  [[ -n "$composed_stdout" ]] && printf '%s\n' "$composed_stdout"
 
   if (( dry_run )); then
     return 0

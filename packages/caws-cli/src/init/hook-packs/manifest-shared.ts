@@ -389,7 +389,12 @@ import { isAdapterCoveredSurface } from './types';
 // block-dangerous.sh, and the best-effort session-log.sh/plan-transcript-*.sh/
 // runtime-paths.sh lookups to omit/skip the home-tier entirely when no real
 // home is known, rather than defaulting to a filesystem-root path.
-export const SHARED_PACK_VERSION = 63;
+//
+// v64 (CAWS-MESSAGE-OFFER-SETTLEMENT-DELIVERY-01): automatic message delivery
+// now reserves an expiring offer and settles it only after bounded advisory
+// composition reaches the adapter-handoff boundary. Same-priority advisory
+// cards compose whole under budget while guard decisions retain precedence.
+export const SHARED_PACK_VERSION = 64;
 
 /**
  * The vendored TELEMETRY rows: the turn-log fold (session-log.sh +

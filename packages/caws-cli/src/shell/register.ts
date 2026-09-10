@@ -53,6 +53,7 @@ import {
   runMessageSendCommand,
   runMessageReplyCommand,
   runMessagePollCommand,
+  runMessageSettleCommand,
   runMessageInboxCommand,
   runMessageHistoryCommand,
   runMessageStatusCommand,
@@ -2022,17 +2023,39 @@ export function registerShellCommands(
       peek?: boolean;
       receipt?: string;
       drain?: string;
+      offer?: boolean;
+      offerTtlMs?: string;
       json?: boolean;
       data?: boolean;
     }) => {
       const waitMs = opts.wait !== undefined ? Number(opts.wait) : undefined;
       const drain = opts.drain !== undefined ? Number(opts.drain) : undefined;
+      const offerTtlMs = opts.offerTtlMs !== undefined ? Number(opts.offerTtlMs) : undefined;
       const code = runMessagePollCommand({
         ...(opts.me !== undefined ? { me: opts.me } : {}),
         ...(waitMs !== undefined && Number.isFinite(waitMs) ? { waitMs } : {}),
         ...(opts.peek === true ? { peek: true } : {}),
         ...(opts.receipt === 'auto' ? { receipt: 'auto' as const } : {}),
         ...(drain !== undefined && Number.isFinite(drain) && drain > 0 ? { drain } : {}),
+        ...(opts.offer === true ? { offer: true } : {}),
+        ...(offerTtlMs !== undefined && Number.isFinite(offerTtlMs) ? { offerTtlMs } : {}),
+        json: opts.json === true,
+        showData: opts.data === true,
+      });
+      exit(code);
+    });
+
+  defineLeaf(messageCmd, leafMeta(MESSAGE_COMMAND_META, 'settle'))
+    .action((offerId: string | undefined, opts: {
+      me?: string;
+      outcome?: string;
+      json?: boolean;
+      data?: boolean;
+    }) => {
+      const code = runMessageSettleCommand({
+        offerId: offerId ?? '',
+        ...(opts.me !== undefined ? { me: opts.me } : {}),
+        outcome: (opts.outcome ?? 'delivered') as 'delivered' | 'released',
         json: opts.json === true,
         showData: opts.data === true,
       });

@@ -20,6 +20,7 @@ const { execFileSync } = require('child_process');
 const {
   runMessageSendCommand,
   runMessagePollCommand,
+  runMessageSettleCommand,
   runMessageInboxCommand,
 } = require('../../dist/shell/commands/message');
 const { initProject } = require('../../dist/store/init-store');
@@ -593,4 +594,35 @@ test('ECON A2: poll --drain JSON carries messages[], message alias, waiting, and
   expect(parsed.message.text).toBe('one');
   expect(parsed.waiting).toBe(0);
   expect(typeof parsed.poll_ms).toBe('number');
+});
+
+test('OFFER A1: JSON offer poll stays queued until the exact offer is settled', () => {
+  const root = mkRepo();
+  makeLive(root, 'alice');
+  makeLive(root, 'bob');
+  const { opts: bobOpts } = io(root, 'bob');
+  expect(runMessageSendCommand({ ...bobOpts, to: 'alice', text: 'offered' })).toBe(0);
+
+  const { out: pollOut, opts: aliceOpts } = io(root, 'alice');
+  expect(runMessagePollCommand({ ...aliceOpts, json: true, offer: true, receipt: 'auto' })).toBe(0);
+  const offered = JSON.parse(pollOut.join('\n'));
+  expect(offered.offer).toMatchObject({ recipient: 'alice' });
+  expect(offered.waiting).toBe(1);
+
+  const settleOut = [];
+  expect(runMessageSettleCommand({
+    ...aliceOpts,
+    out: (line) => settleOut.push(line),
+    offerId: offered.offer.id,
+    outcome: 'delivered',
+    json: true,
+  })).toBe(0);
+  expect(JSON.parse(settleOut.join('\n'))).toMatchObject({
+    ok: true,
+    settlement: { offerId: offered.offer.id, boundary: 'adapter_handoff' },
+  });
+
+  const after = [];
+  expect(runMessagePollCommand({ ...aliceOpts, out: (line) => after.push(line), json: true, peek: true })).toBe(0);
+  expect(JSON.parse(after.join('\n')).message).toBeNull();
 });

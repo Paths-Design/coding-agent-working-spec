@@ -132,6 +132,7 @@ export type {
 export {
   sendMessage,
   pollMessage,
+  settleMessageOffer,
   inboxCount,
   inboxMessages,
   inboxAllMessages,
@@ -156,6 +157,8 @@ export type {
   HistoryEntry,
   PollResult,
   PollOptions,
+  MessageOffer,
+  MessageOfferSettlement,
   MessagePruneOptions,
   MessagePruneEntry,
   MessagePrunePlan,
