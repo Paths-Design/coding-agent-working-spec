@@ -64,3 +64,25 @@ contracts:
   - name: 'hook-advisory-composition'
     type: behavior
     path: 'packages/caws-cli/templates/hook-packs/shared/lib/run-handlers.sh'
+evidence:
+  - criterion_id: A1
+    status: pass
+    evidence_ref: machine-runtime same-priority composition plus exact selected/released settlement; pack-fingerprint guard
+    recorded_at: "2026-09-10T06:10:58.159Z"
+    command: npx jest tests/adapter/machine-runtime.test.js tests/init/pack-fingerprint.test.js --runInBand --config package.json
+    exit_code: 0
+    commit_sha: d88887f6
+  - criterion_id: A2
+    status: pass
+    evidence_ref: "message offer concurrency, expiry, release, replay, recipient and hostile ledger tests; messages-store mutation 83.78%"
+    recorded_at: "2026-09-10T06:10:59.277Z"
+    command: "npm run mutation:run:store"
+    exit_code: 0
+    commit_sha: "1568e383"
+  - criterion_id: A3
+    status: pass
+    evidence_ref: machine-runtime malformed/oversized advisory and hard-block independence; Kimi deny regression
+    recorded_at: "2026-09-10T06:10:59.978Z"
+    command: "npx jest tests/adapter/machine-runtime.test.js --runInBand --config package.json && npm exec -- bats tests/hooks/bats/kimi-surface.bats"
+    exit_code: 0
+    commit_sha: d88887f6
