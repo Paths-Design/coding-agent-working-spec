@@ -8,7 +8,10 @@ updated_at: '2026-09-11T00:15:58.657Z'
 created_by_session: 'session-9bb5787d-bf49-4a1f-9627-8439fec62a00'
 blast_radius:
   modules:
-    - 'TODO: list one or more modules this spec touches.'
+    - 'packages/caws-cli/src/init/hook-packs/manifest-dsh.ts (DSH pack identity, summary, and pack version)'
+    - 'packages/caws-cli/templates/hook-packs/dsh/AGENTS.md (installed surface doctrine: the shipped runtime description)'
+    - 'packages/caws-cli/src/shell/render/init-hook-pack.ts (the dsh arm of the install guidance panel)'
+    - 'packages/caws-cli/tests/init/init-hook-pack-render.test.js (A8 tripwire keeping the retired pin from returning)'
   data_migration: false
 operational_rollback_slo: 5m
 scope:
@@ -19,11 +22,26 @@ scope:
     - packages/caws-cli/tests/init/init-hook-pack-render.test.js
   out: []
 invariants:
-  - 'TODO: describe one invariant this spec guarantees.'
+  - 'DERIVED, NOT ENUMERATED: the DSH hook mechanism is read from the surface-registry projection (SURFACE_HOOK_MECHANISMS.dsh), so no CAWS artifact asserts which config file a harness reads to decide whether it is wired.'
+  - 'NO RETIRED PIN: no shipped DSH artifact names @deepseek-ai/dsh-hooks-caws; the CAWS reference adapter is named as the profile-loaded bundle and every claim about live wiring is scoped to a profile check the reader can run.'
+  - 'NO BEHAVIOR CHANGE: guard logic, dispatcher paths, surfaces/registry.json, the installed-file manifest, and the activation lifecycle are untouched. Only the runtime description and its guidance text change.'
+  - 'SUPPLY-CHAIN SIGNAL: the doctrine-template change carries a DSH_PACK_VERSION bump so an installed copy is visibly updated rather than silently byte-swapped. The dsh pack has no pack-fingerprints.json baseline entry; adding one is out of scope and recorded as a non-claim.'
 acceptance:
   - id: A1
-    given: 'TODO'
-    when: 'TODO'
-    then: 'TODO'
+    given: 'the shipped DSH artifacts (templates/hook-packs/dsh/, manifest-dsh.ts, the rendered dsh install guidance)'
+    when: 'the A8 scan runs'
+    then: 'none of them contains the retired package name @deepseek-ai/dsh-hooks-caws, while the same scan still finds the registry-derived mechanism token (positive control), so the assertion cannot pass vacuously'
+  - id: A2
+    given: 'the surface registry projection SURFACE_HOOK_MECHANISMS'
+    when: 'the DSH doctrine template and the rendered dsh guidance are inspected'
+    then: 'both state the mechanism as the registry value (harness-plugin) and direct the reader to verify the live profile (dsh.profile.bundles + cordis.patch.yml) instead of inferring wiring from a settings key'
+  - id: A3
+    given: 'an isolated temp repo'
+    when: 'the DSH pack is installed'
+    then: '.dsh/AGENTS.md lands carrying the registry-derived mechanism statement, parses as a managed file, and is stamped at the bumped DSH_PACK_VERSION'
+  - id: A4
+    given: 'the caws-cli jest suite'
+    when: 'the focused init and hook-pack tests run'
+    then: 'every pre-existing test plus the new A8 arms passes'
 non_functional: {}
 contracts: []
