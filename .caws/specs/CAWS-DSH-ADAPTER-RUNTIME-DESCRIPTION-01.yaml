@@ -59,3 +59,7 @@ evidence:
     status: pass
     evidence_ref: "npx jest tests/init: A8 arm 'a real install stamps the doctrine at the bumped pack version and still parses as managed' installs DSH_PACK into a temp repo; header.hookPack=dsh, hookPackVersion=DSH_PACK_VERSION=2, parseManagedHeader non-null."
     recorded_at: "2026-09-11T00:24:33.435Z"
+  - criterion_id: A4
+    status: pass
+    evidence_ref: "npx jest tests/init => 213 passed/213 (12 suites); npx jest tests/shell => 1055 passed, 1 failed (tests/shell/reprieve-relative-expiry.test.js:293), reproduced identically in the canonical base checkout => pre-existing env failure (mkdir ~/.caws/state/sessions/<id>: Operation not permitted), not slice-introduced. eslint on the 3 changed source/test files: exit 0."
+    recorded_at: "2026-09-11T00:24:34.102Z"
