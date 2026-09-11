@@ -472,6 +472,16 @@ run_handlers() {
             local truncated_card elided marker actual_kept
             truncated_card="$(_rh_truncate_complete_utf8 "$additional_context" "$keep_bytes")"
             actual_kept=$(_rh_byte_count "$truncated_card")
+            # A helper that returned nothing (failure, or a limit below one
+            # character) must OMIT the card, not select a marker-only string with
+            # no content behind it: an agent reading "truncated" learns nothing
+            # and the marker consumes budget for no signal.
+            if (( actual_kept <= 0 )); then
+              printf '[%s] optional advisory omitted: no complete character fits %s bytes (card %s, budget %s)\n' \
+                "$handler" "$keep_bytes" "$card_bytes" "$advisory_budget" >&2
+              actual_kept=-1
+            fi
+            if (( actual_kept >= 0 )); then
             elided=$(( card_bytes - actual_kept ))
             marker="… [truncated: ${elided} bytes elided]"
             truncated_card="${truncated_card}${marker}"
@@ -485,6 +495,7 @@ run_handlers() {
             offer_reason="advisory truncated to fit remaining budget"
             printf '[%s] advisory truncated: card %s bytes = %s kept + %s elided, capped at %s (budget %s)\n' \
               "$handler" "$card_bytes" "$actual_kept" "$elided" "$card_cap" "$advisory_budget" >&2
+            fi
           else
             # Too little room to carry content (or to leave room for the cards
             # behind this one): declining beats emitting a marker with nothing
