@@ -64,3 +64,7 @@ evidence:
     status: pass
     evidence_ref: "npx jest tests/init/pack-fingerprint.test.js: 'dsh pack fingerprint is unchanged (or version bumped)' runs and passes (baseline version 3 == DSH_PACK_VERSION, fingerprint e2c1aafe...). Control: appending one byte to the dsh template failed exactly that case (1 failed / 13 passed); reverting restored 14/14."
     recorded_at: "2026-09-11T00:46:40.507Z"
+  - criterion_id: A4
+    status: pass
+    evidence_ref: "npx jest tests/init/pack-fingerprint.test.js: 'the covered pack set covers every implemented agent surface' passes (was missing dsh); 'every covered pack has a recorded baseline entry' passes. Control: removing the dsh PACKS entry failed the coverage arm (1 failed / 12 passed); reverting restored 14/14."
+    recorded_at: "2026-09-11T00:46:41.188Z"
