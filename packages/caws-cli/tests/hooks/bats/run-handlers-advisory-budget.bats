@@ -264,6 +264,39 @@ EOF
   assert_line 'replacement=0'
 }
 
+@test "advisory budget: an empty truncation result omits the card instead of a marker alone" {
+  # A helper that produces nothing (failure, or a limit below one character)
+  # must not be turned into a card whose entire body is the elision marker. The
+  # assertion is on BOTH the absence of a marker and the presence of the
+  # omission diagnostic, so removing the zero-output guard fails this test.
+  local fake_hooks
+  fake_hooks="$(mktemp -d "${TMPDIR:-/tmp}/caws-bats-rh-empty-XXXXXX")"
+  cat > "$fake_hooks/utf8.sh" <<'EOF'
+#!/usr/bin/env bash
+cat >/dev/null
+python3 -c 'import json; print(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":chr(0x1F600)*400}}))'
+EOF
+  chmod +x "$fake_hooks/utf8.sh"
+
+  run env -i PATH="$PATH" LC_ALL=en_US.UTF-8 CAWS_HOOK_ADVISORY_BUDGET_BYTES=1000 bash -c "
+    source '$CAWS_TEST_HOOKS_DIR/lib/run-handlers.sh'
+    # A stub interpreter that succeeds but emits nothing.
+    python3() { cat >/dev/null; return 0; }
+    export HOOKS_DIR='$fake_hooks' HOOK_INPUT_JSON='{}'
+    out=\"\$(run_handlers utf8.sh 2>&1)\"
+    ctx=\"\$(printf '%s' \"\$out\" | tail -1 | jq -r '.hookSpecificOutput.additionalContext // empty' 2>/dev/null)\"
+    printf 'ctx_bytes=%s\n' \"\$(printf '%s' \"\$ctx\" | wc -c | tr -d ' ')\"
+    printf 'marker_count=%s\n' \"\$(printf '%s' \"\$out\" | grep -c 'truncated:' || true)\"
+    printf 'omitted_count=%s\n' \"\$(printf '%s' \"\$out\" | grep -c 'optional advisory omitted' || true)\"
+  "
+  rm -rf "$fake_hooks"
+
+  # No composed content, no marker, and the omission is reported.
+  assert_line 'ctx_bytes=0'
+  assert_line 'marker_count=0'
+  assert_line 'omitted_count=1'
+}
+
 @test "advisory budget: a budget too small for content declines instead of emitting a bare marker" {
   BUDGET=40 compose 5000
 
