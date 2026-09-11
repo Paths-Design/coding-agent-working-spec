@@ -82,5 +82,5 @@ evidence:
     recorded_at: "2026-09-10T23:36:53.710Z"
   - criterion_id: A5
     status: pass
-    evidence_ref: "Budget 40 (below the 48-byte minimum keep) declines with 'optional advisory omitted' and emits composed_bytes <= 40, never a marker-only string. A1 supplementary: the marker is charged against the cap before the cut, so kept + elided reconstructs the original card exactly (e.g. 9000 = K + E asserted in the arithmetic case)."
-    recorded_at: "2026-09-10T23:36:54.901Z"
+    evidence_ref: "Marker-only output is impossible: a zero-byte truncation result omits the card (verified with a stub interpreter returning empty: composed_ctx_bytes=0, omitted=1, no marker). A helper emitting an invalid byte (0xF0) is rejected by the iconv check and omitted. 9/9 bats cases pass, including a dedicated invalid-byte rejection case and a 4-byte-boundary alignment case."
+    recorded_at: "2026-09-11T01:53:09.762Z"
