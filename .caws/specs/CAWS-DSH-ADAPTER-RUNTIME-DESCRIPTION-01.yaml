@@ -51,3 +51,7 @@ evidence:
     status: pass
     evidence_ref: "npx jest tests/init/init-hook-pack-render.test.js: A8 arm 'no shipped DSH artifact names the retired shim package' scans doctrine+manifest source+summary+install panel+activation panel (42/42 pass). Sensitivity control: appending the retired pin to the doctrine killed that arm (3 failed/34 skipped); reverting restored 8/8."
     recorded_at: "2026-09-11T00:24:32.145Z"
+  - criterion_id: A2
+    status: pass
+    evidence_ref: "npx jest tests/init: A8 arms 'states the registry mechanism', 'sends the reader to the live profile (dsh.profile.bundles + cordis.patch.yml), never a settings key', 'registry projection matches registry.json', 'manifest summary derives from the registry'; 213/213 pass across 12 suites."
+    recorded_at: "2026-09-11T00:24:32.775Z"
