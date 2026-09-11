@@ -2,10 +2,11 @@ id: CAWS-HOOK-ADVISORY-SESSION-DEDUP-01
 title: 'The hook composer re-injects an identical advisory every time its handler fires, and each duplicate costs context'
 risk_tier: 2
 mode: feature
-lifecycle_state: active
-worktree: wt-advisory-dedup
+lifecycle_state: closed
+resolution: completed
+closure_notes: 'Per-session advisory dedup: a card whose text is byte-identical to one this handler already surfaced in the session is suppressed, with the skip reported on stderr. Measured over the transcript corpus, 16.2 percent of injections were session-wide repeats; only 795 of them were consecutive, so a consecutive-only guard would have missed four fifths of the win. The key is handler plus sha256 over the advisory exact bytes; the ledger is per-session machine state (percent-encoded sid), bounded by CAWS_HOOK_ADVISORY_DEDUP_MAX, fails open on any unusable condition, and keys are staged then committed only when a dispatch actually delivers so a later block cannot consume a retry. Message-offer cards bypass dedup because settlement reads the card carrying the offer. Two adversarial headless reviews drove the fixes: recording before delivery, trailing-newline hashing, ledger writability, trim-after-append containment, base-10 max parsing, session-id collisions, and a set -u unbound variable. Evidence: bats 230/230, jest 320/320, gates all PASS. Two limitations are recorded in docs/architecture/design/hook-io-contract-v1.md rather than claimed away: suppression is invalidated by content change, not by a witnessed authority change, and a trailing-newline-only difference is normalized by command substitution before hashing. NOT DEPLOYED: projects pick this up on their next caws init / adapters install.'
 created_at: '2026-09-11T01:30:00.000Z'
-updated_at: '2026-09-11T03:00:55.360Z'
+updated_at: '2026-09-11T04:19:17.279Z'
 blast_radius:
   modules:
     - 'caws-cli shared hook pack (handler dispatch loop, advisory composition)'
