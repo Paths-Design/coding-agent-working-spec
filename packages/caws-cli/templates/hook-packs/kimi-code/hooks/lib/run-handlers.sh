@@ -314,19 +314,19 @@ _rh_dedup_seen() {
   grep -F -x -q -- "$key" "$ledger" 2>/dev/null
 }
 
-# Record a key that actually reached the model. Trim-before-append so a failed
-# replacement cannot leave the ledger growing without bound. Failures are
-# swallowed: a missing ledger may cost a duplicate later, never a suppression.
-_rh_dedup_record() {
-  local key="$1" ledger max dir lines tmp
+# Commit the pending keys collected during this dispatch. Called only after the
+# dispatch is known to deliver: a blocking decision discards the composed output,
+# so advice recorded in that dispatch never reached the model and must not
+# suppress its retry.
+_rh_dedup_flush() {
+  local pending="$1" ledger max dir lines tmp
+  [[ -n "$pending" && -s "$pending" ]] || return 0
   ledger="$(_rh_dedup_ledger)" || return 0
   [[ -n "$ledger" ]] || return 0
   max="$(_rh_dedup_max)"
   dir="$(dirname "$ledger")"
   mkdir -p "$dir" 2>/dev/null || return 0
-  # Append first, then trim to the bound: trimming before the append leaves
-  # max+1 rows, one over the configured bound.
-  printf '%s\n' "$key" >> "$ledger" 2>/dev/null || return 0
+  cat "$pending" >> "$ledger" 2>/dev/null || return 0
   lines=$(wc -l < "$ledger" 2>/dev/null | tr -d ' ')
   [[ "$lines" =~ ^[0-9]+$ ]] || return 0
   if (( lines > max )); then
@@ -335,6 +335,13 @@ _rh_dedup_record() {
       mv -f "$tmp" "$ledger" 2>/dev/null || rm -f "$tmp" 2>/dev/null
     else
       rm -f "$tmp" 2>/dev/null
+    fi
+    # If the ledger is still over the bound the trim could not be written, so
+    # drop it: a fresh ledger means "emit", whereas a stuck oversized one is a
+    # wrong-suppression risk. _rh_dedup_seen also refuses over-ceiling ledgers.
+    lines=$(wc -l < "$ledger" 2>/dev/null | tr -d ' ')
+    if [[ "$lines" =~ ^[0-9]+$ ]] && (( lines > max )); then
+      rm -f "$ledger" 2>/dev/null
     fi
   fi
   return 0
@@ -345,6 +352,10 @@ _rh_dedup_record() {
 # ---------------------------------------------------------------------------
 run_handlers() {
   local short_circuit=0
+  # Dispatch-scoped staging for dedup keys, declared with the other locals so it
+  # exists on every path: a declaration placed inside a conditional block is
+  # unbound under `set -u` when that block does not run.
+  local _dedup_pending=""
   if [[ "${1:-}" == "--short-circuit-on-block" ]]; then
     short_circuit=1
     shift
@@ -406,6 +417,13 @@ run_handlers() {
   # is safer across shells and makes the intent explicit.
   local entries
   entries=("$@")
+
+  # Stage dedup keys for the duration of this dispatch. They are committed only
+  # if the dispatch delivers (see the tail of this function), because a blocking
+  # decision discards every composed card.
+  if _rh_dedup_enabled; then
+    _dedup_pending=$(mktemp 2>/dev/null) || _dedup_pending=""
+  fi
 
   # CAWS-HOOKPACK-DISPATCH-EMPTY-HANDLERS-CRASH-001: bash 3.2 (macOS default
   # /bin/bash) throws "unbound variable" expanding "${entries[@]}" when
@@ -663,11 +681,11 @@ run_handlers() {
               "$handler" "$card_bytes" "$available_bytes" "$advisory_budget" >&2
           fi
         fi
-        # P1: record only advice that actually reached the model. Recording a
-        # budget-omitted or control-displaced card would suppress the retry that
-        # is supposed to surface it.
-        if (( _dedup_emit )) && [[ -n "$_dedup_key" ]]; then
-          _rh_dedup_record "$_dedup_key"
+        # P1: stage only advice this dispatch actually emits. A budget-omitted or
+        # control-displaced card is never staged, and a later BLOCK discards the
+        # whole dispatch without committing anything, so its retry still surfaces.
+        if (( _dedup_emit )) && [[ -n "$_dedup_key" && -n "$_dedup_pending" ]]; then
+          printf '%s\n' "$_dedup_key" >> "$_dedup_pending" 2>/dev/null || true
         fi
         fi
       elif _rh_has_additional_context_key "$stdout_buf"; then
@@ -708,6 +726,16 @@ run_handlers() {
     fi
   fi
   [[ -n "$composed_stdout" ]] && printf '%s\n' "$composed_stdout"
+
+  # Commit staged dedup keys only when this dispatch delivered normally. A
+  # blocking decision (max_exit 2) discarded every composed card, so nothing was
+  # surfaced and nothing may be suppressed on the retry.
+  if [[ -n "$_dedup_pending" ]]; then
+    if (( dry_run == 0 && max_exit < 2 )); then
+      _rh_dedup_flush "$_dedup_pending"
+    fi
+    rm -f "$_dedup_pending" 2>/dev/null || true
+  fi
 
   if (( dry_run )); then
     return 0
