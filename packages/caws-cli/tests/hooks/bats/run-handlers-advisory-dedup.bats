@@ -116,8 +116,11 @@ EOF
   compose_text "BOUND-3" session="dedup-bounded" CAWS_HOOK_ADVISORY_DEDUP_MAX=3
   compose_text "BOUND-4" session="dedup-bounded" CAWS_HOOK_ADVISORY_DEDUP_MAX=3
 
-  local ledger="$BATS_TEST_TMPDIR/caws-home/state/sessions/dedup-bounded/advisory-seen.txt"
-  [[ -f "$ledger" ]] || fail "ledger was not written: $ledger"
+  # The ledger directory is the percent-encoded session id, so locate it rather
+  # than hardcoding the escaping.
+  local ledger
+  ledger="$(find "$BATS_TEST_TMPDIR/caws-home/state/sessions" -name advisory-seen.txt -print -quit)"
+  [[ -n "$ledger" && -f "$ledger" ]] || fail "ledger was not written under state/sessions"
   local lines
   lines="$(wc -l < "$ledger" | tr -d ' ')"
   (( lines <= 3 )) || fail "ledger grew to $lines lines with cap 3"

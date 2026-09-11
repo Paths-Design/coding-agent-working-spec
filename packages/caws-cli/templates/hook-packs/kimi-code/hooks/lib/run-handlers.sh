@@ -236,26 +236,20 @@ _rh_pack_python_helper() {
   return 0
 }
 
+
 # ---------------------------------------------------------------------------
 # Advisory session dedup (CAWS-HOOK-ADVISORY-SESSION-DEDUP-01)
 #
 # A handler that fires on every tool call re-injects byte-identical advice every
-# time. Measured over the real transcript corpus, 16% of all injected advisories
-# are session-wide repeats; one session spent 238 of its 1163 advisory
-# injections on text it had already been given. Suppression is keyed on the
-# EXACT advisory text, so a changed fact always re-surfaces. Nothing here is
-# authority, and nothing here can suppress a control decision: those
-# short-circuit before this point is reached.
+# time (measured: 16% of all injected advisories are session-wide repeats).
+# Suppression is keyed on the EXACT advisory bytes, so a changed fact always
+# re-surfaces. Nothing here is authority, and nothing here can suppress a control
+# decision: those short-circuit before this point.
+#
+# Fail-open posture: dedup engages only when it can do so safely. An unknown
+# session, a missing/oversized/unwritable ledger, or a missing digest tool all
+# mean "emit", never "suppress".
 # ---------------------------------------------------------------------------
-
-# A handler that wrote a machine-adapter message offer into its sidecar is
-# re-surfacing a DELIVERABLE, not repeating advice: settlement reads the card
-# that carries the offer, so suppressing the card loses the message. Such cards
-# bypass dedup entirely.
-_rh_handler_has_live_offer() {
-  [[ -n "${CAWS_HANDLER_OFFER_FILE:-}" && -s "${CAWS_HANDLER_OFFER_FILE:-}" ]]
-}
-
 _rh_dedup_enabled() {
   [[ "${CAWS_HOOK_ADVISORY_DEDUP:-1}" == "0" ]] && return 1
   [[ -n "${_rh_session_id:-}" && "${_rh_session_id}" != "unknown" ]] || return 1
@@ -263,8 +257,13 @@ _rh_dedup_enabled() {
   return 0
 }
 
+_rh_handler_has_live_offer() {
+  [[ -n "${CAWS_HANDLER_OFFER_FILE:-}" && -s "${CAWS_HANDLER_OFFER_FILE:-}" ]]
+}
+
 # This session's ledger path. Mirrors reprieve.sh's session-state resolution
-# (CAWS-HOME tier, sanitized id) without depending on source order.
+# (CAWS-HOME tier, sanitized id). Escaping percent-encodes every byte outside
+# [A-Za-z0-9._-] so two distinct session ids cannot collide into one ledger.
 _rh_dedup_ledger() {
   local home=""
   if [[ -n "${CAWS_HOME:-}" ]]; then
@@ -275,38 +274,62 @@ _rh_dedup_ledger() {
     return 1
   fi
   local safe
-  safe=$(printf '%s' "$_rh_session_id" | tr -c 'A-Za-z0-9._-' '_')
+  safe=$(printf '%s' "$_rh_session_id" | od -An -tu1 -v \
+    | awk '{for (i=1;i<=NF;i++) printf "%02x", $i}')
+  [[ -n "$safe" ]] || return 1
   printf '%s/state/sessions/%s/advisory-seen.txt\n' "$home" "$safe"
 }
 
+# sha256 of the EXACT advisory bytes. `od` keeps the digest independent of shell
+# string normalization, so "X" and "X\n" are different keys.
 _rh_dedup_key() {
   local handler="$1" text="$2" digest
-  digest=$(printf '%s' "$text" | shasum -a 256 2>/dev/null | cut -d' ' -f1)
-  [[ -n "$digest" ]] || return 1
+  digest=$(printf '%s' "$text" | od -An -tu1 -v | shasum -a 256 2>/dev/null | cut -d' ' -f1)
+  [[ "$digest" =~ ^[a-f0-9]{64}$ ]] || return 1
   printf '%s\t%s\n' "$handler" "$digest"
 }
 
+_rh_dedup_max() {
+  local max="${CAWS_HOOK_ADVISORY_DEDUP_MAX:-4096}"
+  [[ "$max" =~ ^[0-9]{1,9}$ ]] || max=4096
+  printf '%s' "$(( 10#$max ))"
+}
+
 # 0 when this exact advisory was already recorded for this handler this session.
+# Any unsafe ledger condition returns non-zero, so the caller emits.
 _rh_dedup_seen() {
-  local key="$1" ledger
+  local key="$1" ledger dir lines max ceiling
   ledger="$(_rh_dedup_ledger)" || return 1
-  [[ -f "$ledger" ]] || return 1
+  [[ -n "$ledger" && -f "$ledger" && -r "$ledger" ]] || return 1
+  # An unappendable ledger cannot record a suppression, so it must not cause one.
+  [[ -w "$ledger" ]] || return 1
+  dir="$(dirname "$ledger")"
+  [[ -w "$dir" ]] || return 1
+  max="$(_rh_dedup_max)"
+  ceiling=$(( max * 4 ))
+  # A corrupt or overgrown ledger is not trusted as evidence of what surfaced.
+  lines=$(wc -l < "$ledger" 2>/dev/null | tr -d ' ')
+  [[ "$lines" =~ ^[0-9]+$ ]] || return 1
+  (( lines > ceiling )) && return 1
   grep -F -x -q -- "$key" "$ledger" 2>/dev/null
 }
 
-# Record a key that reached the model. Failures are swallowed: a missing ledger
-# can cost a duplicate later, never a suppressed advisory.
+# Record a key that actually reached the model. Trim-before-append so a failed
+# replacement cannot leave the ledger growing without bound. Failures are
+# swallowed: a missing ledger may cost a duplicate later, never a suppression.
 _rh_dedup_record() {
   local key="$1" ledger max dir lines tmp
   ledger="$(_rh_dedup_ledger)" || return 0
-  max="${CAWS_HOOK_ADVISORY_DEDUP_MAX:-4096}"
-  [[ "$max" =~ ^[0-9]{1,9}$ ]] || max=4096
+  [[ -n "$ledger" ]] || return 0
+  max="$(_rh_dedup_max)"
   dir="$(dirname "$ledger")"
   mkdir -p "$dir" 2>/dev/null || return 0
+  # Append first, then trim to the bound: trimming before the append leaves
+  # max+1 rows, one over the configured bound.
   printf '%s\n' "$key" >> "$ledger" 2>/dev/null || return 0
-  # Bound the ledger with at most one extra read per append.
   lines=$(wc -l < "$ledger" 2>/dev/null | tr -d ' ')
-  if [[ "$lines" =~ ^[0-9]+$ ]] && (( lines > max )); then
+  [[ "$lines" =~ ^[0-9]+$ ]] || return 0
+  if (( lines > max )); then
     tmp="${ledger}.tmp.$$"
     if tail -n "$max" "$ledger" > "$tmp" 2>/dev/null; then
       mv -f "$tmp" "$ledger" 2>/dev/null || rm -f "$tmp" 2>/dev/null
@@ -496,7 +519,7 @@ run_handlers() {
         # CAWS-HOOK-ADVISORY-SESSION-DEDUP-01: advice this session already
         # received from this handler, byte-identical, is suppressed. The skip is
         # reported so "did not fire" stays distinguishable from "deduplicated".
-        local _dedup_key="" _dedup_skip=0
+        local _dedup_key="" _dedup_skip=0 _dedup_emit=0
         if _rh_dedup_enabled && ! _rh_handler_has_live_offer; then
           _dedup_key="$(_rh_dedup_key "$handler" "$additional_context")" || _dedup_key=""
           if [[ -n "$_dedup_key" ]] && _rh_dedup_seen "$_dedup_key"; then
@@ -536,6 +559,7 @@ run_handlers() {
             advisory_context="$advisory_context"$'\n\n'"$additional_context"
           fi
           [[ -n "$advisory_template" ]] || advisory_template="$stdout_buf"
+          _dedup_emit=1
           offer_action="selected"
           offer_reason="whole advisory selected within budget"
         else
@@ -625,7 +649,8 @@ run_handlers() {
               advisory_context="$advisory_context"$'\n\n'"$truncated_card"
             fi
             [[ -n "$advisory_template" ]] || advisory_template="$stdout_buf"
-            offer_action="selected"
+            _dedup_emit=1
+          offer_action="selected"
             offer_reason="advisory truncated to fit remaining budget"
             printf '[%s] advisory truncated: card %s bytes = %s kept + %s elided, capped at %s (budget %s)\n' \
               "$handler" "$card_bytes" "$actual_kept" "$elided" "$card_cap" "$advisory_budget" >&2
@@ -638,7 +663,12 @@ run_handlers() {
               "$handler" "$card_bytes" "$available_bytes" "$advisory_budget" >&2
           fi
         fi
-        [[ -n "$_dedup_key" ]] && _rh_dedup_record "$_dedup_key"
+        # P1: record only advice that actually reached the model. Recording a
+        # budget-omitted or control-displaced card would suppress the retry that
+        # is supposed to surface it.
+        if (( _dedup_emit )) && [[ -n "$_dedup_key" ]]; then
+          _rh_dedup_record "$_dedup_key"
+        fi
         fi
       elif _rh_has_additional_context_key "$stdout_buf"; then
         printf '[%s] optional advisory omitted: additionalContext must be a non-empty string\n' \
