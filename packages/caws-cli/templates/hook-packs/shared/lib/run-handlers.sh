@@ -226,6 +226,88 @@ _rh_pack_python_helper() {
   done
   return 0
 }
+
+# ---------------------------------------------------------------------------
+# Advisory session dedup (CAWS-HOOK-ADVISORY-SESSION-DEDUP-01)
+#
+# A handler that fires on every tool call re-injects byte-identical advice every
+# time. Measured over the real transcript corpus, 16% of all injected advisories
+# are session-wide repeats; one session spent 238 of its 1163 advisory
+# injections on text it had already been given. Suppression is keyed on the
+# EXACT advisory text, so a changed fact always re-surfaces. Nothing here is
+# authority, and nothing here can suppress a control decision: those
+# short-circuit before this point is reached.
+# ---------------------------------------------------------------------------
+
+# A handler that wrote a machine-adapter message offer into its sidecar is
+# re-surfacing a DELIVERABLE, not repeating advice: settlement reads the card
+# that carries the offer, so suppressing the card loses the message. Such cards
+# bypass dedup entirely.
+_rh_handler_has_live_offer() {
+  [[ -n "${CAWS_HANDLER_OFFER_FILE:-}" && -s "${CAWS_HANDLER_OFFER_FILE:-}" ]]
+}
+
+_rh_dedup_enabled() {
+  [[ "${CAWS_HOOK_ADVISORY_DEDUP:-1}" == "0" ]] && return 1
+  [[ -n "${_rh_session_id:-}" && "${_rh_session_id}" != "unknown" ]] || return 1
+  command -v shasum >/dev/null 2>&1 || return 1
+  return 0
+}
+
+# This session's ledger path. Mirrors reprieve.sh's session-state resolution
+# (CAWS-HOME tier, sanitized id) without depending on source order.
+_rh_dedup_ledger() {
+  local home=""
+  if [[ -n "${CAWS_HOME:-}" ]]; then
+    home="$CAWS_HOME"
+  elif [[ -n "${HOME:-}" ]]; then
+    home="${HOME}/.caws"
+  else
+    return 1
+  fi
+  local safe
+  safe=$(printf '%s' "$_rh_session_id" | tr -c 'A-Za-z0-9._-' '_')
+  printf '%s/state/sessions/%s/advisory-seen.txt\n' "$home" "$safe"
+}
+
+_rh_dedup_key() {
+  local handler="$1" text="$2" digest
+  digest=$(printf '%s' "$text" | shasum -a 256 2>/dev/null | cut -d' ' -f1)
+  [[ -n "$digest" ]] || return 1
+  printf '%s\t%s\n' "$handler" "$digest"
+}
+
+# 0 when this exact advisory was already recorded for this handler this session.
+_rh_dedup_seen() {
+  local key="$1" ledger
+  ledger="$(_rh_dedup_ledger)" || return 1
+  [[ -f "$ledger" ]] || return 1
+  grep -F -x -q -- "$key" "$ledger" 2>/dev/null
+}
+
+# Record a key that reached the model. Failures are swallowed: a missing ledger
+# can cost a duplicate later, never a suppressed advisory.
+_rh_dedup_record() {
+  local key="$1" ledger max dir lines tmp
+  ledger="$(_rh_dedup_ledger)" || return 0
+  max="${CAWS_HOOK_ADVISORY_DEDUP_MAX:-4096}"
+  [[ "$max" =~ ^[0-9]{1,9}$ ]] || max=4096
+  dir="$(dirname "$ledger")"
+  mkdir -p "$dir" 2>/dev/null || return 0
+  printf '%s\n' "$key" >> "$ledger" 2>/dev/null || return 0
+  # Bound the ledger with at most one extra read per append.
+  lines=$(wc -l < "$ledger" 2>/dev/null | tr -d ' ')
+  if [[ "$lines" =~ ^[0-9]+$ ]] && (( lines > max )); then
+    tmp="${ledger}.tmp.$$"
+    if tail -n "$max" "$ledger" > "$tmp" 2>/dev/null; then
+      mv -f "$tmp" "$ledger" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+    else
+      rm -f "$tmp" 2>/dev/null
+    fi
+  fi
+  return 0
+}
+
 # ---------------------------------------------------------------------------
 # run_handlers [--short-circuit-on-block] <handler-entry>...
 # ---------------------------------------------------------------------------
@@ -348,11 +430,8 @@ run_handlers() {
       continue
     fi
 
-    local t_start=0
-    if (( timing )); then
-      t_start=$(_rh_ms_now)
-    fi
-
+    # Message-offer sidecar first: the composer consults it to decide whether
+    # this card carries a deliverable, which must not be deduplicated.
     local stderr_file
     stderr_file=$(mktemp)
     local handler_offer_file=""
@@ -362,6 +441,12 @@ run_handlers() {
     else
       unset CAWS_HANDLER_OFFER_FILE 2>/dev/null || true
     fi
+
+    local t_start=0
+    if (( timing )); then
+      t_start=$(_rh_ms_now)
+    fi
+
     local stdout_buf
     stdout_buf=$(printf '%s' "$HOOK_INPUT_JSON" \
                   | "$handler_path" "$@" 2>"$stderr_file")
@@ -411,6 +496,21 @@ run_handlers() {
       local additional_context=""
       additional_context=$(_rh_additional_context "$stdout_buf" || true)
       if [[ -n "$additional_context" ]]; then
+        # CAWS-HOOK-ADVISORY-SESSION-DEDUP-01: advice this session already
+        # received from this handler, byte-identical, is suppressed. The skip is
+        # reported so "did not fire" stays distinguishable from "deduplicated".
+        local _dedup_key="" _dedup_skip=0
+        if _rh_dedup_enabled && ! _rh_handler_has_live_offer; then
+          _dedup_key="$(_rh_dedup_key "$handler" "$additional_context")" || _dedup_key=""
+          if [[ -n "$_dedup_key" ]] && _rh_dedup_seen "$_dedup_key"; then
+            _dedup_skip=1
+            printf '[%s] advisory suppressed: identical text already surfaced in this session\n' \
+              "$handler" >&2
+          fi
+        fi
+        if (( _dedup_skip )); then
+          :
+        else
         # CAWS-HOOK-ADVISORY-BUDGET-TIERS-01. The previous check measured the
         # CUMULATIVE candidate: one oversized card did not just omit itself, the
         # running total never shrank and every later handler's advisory was
@@ -540,6 +640,8 @@ run_handlers() {
             printf '[%s] optional advisory omitted: card %s bytes exceeds %s available (budget %s)\n' \
               "$handler" "$card_bytes" "$available_bytes" "$advisory_budget" >&2
           fi
+        fi
+        [[ -n "$_dedup_key" ]] && _rh_dedup_record "$_dedup_key"
         fi
       elif _rh_has_additional_context_key "$stdout_buf"; then
         printf '[%s] optional advisory omitted: additionalContext must be a non-empty string\n' \

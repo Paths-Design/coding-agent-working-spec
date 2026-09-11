@@ -408,7 +408,13 @@ import { isAdapterCoveredSurface } from './types';
 // elided-byte marker rather than dropped whole, and a declined card's diagnostic
 // names its own size, so one large guard can no longer starve every later
 // handler's advisory for that invocation.
-export const SHARED_PACK_VERSION = 66;
+// v67 (CAWS-HOOK-ADVISORY-SESSION-DEDUP-01): the dispatch loop suppresses an
+// advisory card whose text is byte-identical to one this handler already
+// surfaced in this session, keyed on a sha256 of the exact text so a changed
+// fact always re-surfaces. The ledger is per-session machine state, bounded by
+// CAWS_HOOK_ADVISORY_DEDUP_MAX, fail-open on any fault, and every suppression is
+// reported on stderr.
+export const SHARED_PACK_VERSION = 67;
 
 /**
  * The vendored TELEMETRY rows: the turn-log fold (session-log.sh +

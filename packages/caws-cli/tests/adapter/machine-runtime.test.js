@@ -234,7 +234,16 @@ test('a budget-omitted heartbeat message retries and delivers on the next adapte
     CAWS_HOOK_ADVISORY_BUDGET_BYTES: '32768',
   });
   expect(after.status).toBe(0);
-  expect(JSON.parse(after.stdout).hookSpecificOutput.additionalContext).not.toContain(message.text);
+  // CAWS-HOOK-ADVISORY-SESSION-DEDUP-01: the fixture emits one constant card
+  // ("kept") plus the message offer. After the message is delivered, the only
+  // remaining card is a byte-identical repeat of advice this session already
+  // received, so the composer suppresses it and the response carries no
+  // additionalContext at all. The claim under test is unchanged -- the delivered
+  // message must not be re-surfaced -- so an absent context satisfies it.
+  expect(after.stdout).not.toContain(message.text);
+  if (after.stdout.trim()) {
+    expect(JSON.parse(after.stdout).hookSpecificOutput.additionalContext ?? '').not.toContain(message.text);
+  }
 });
 
 test('a settlement interruption remains uncertain and retries after offer expiry', () => {
