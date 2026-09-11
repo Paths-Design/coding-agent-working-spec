@@ -70,8 +70,8 @@ evidence:
     recorded_at: "2026-09-10T23:36:50.185Z"
   - criterion_id: A2
     status: pass
-    evidence_ref: "Multi-byte case under LC_ALL=en_US.UTF-8: 500x 'é' (1000 bytes) against budget 120 emits composed_bytes <= 120 and replacement_char=0, because accounting and the substring cut both run in the C locale so the unit is bytes and no character is split. First cut emitted 167 bytes for a 100-byte budget; falsified by review, now fixed."
-    recorded_at: "2026-09-10T23:36:51.280Z"
+    evidence_ref: "Byte-exact byte cut now lives in the shipped helper advisory_truncate.py (installed to .caws/hooks, manifest row alongside classify_command.py). Verified across 2/3/4-byte UTF-8: 400 emoji at limits 111/112/113/116/117 -> 108/112/112/116/116 bytes, always a whole-character boundary, never a replacement character; e-acute 5/6/7 -> 4/6/6; euro 4/5/6 -> 3/3/6. The composer additionally validates the helper's result for bound, non-emptiness, byte-prefix, and valid UTF-8 via iconv, and omits the card on any failure."
+    recorded_at: "2026-09-11T01:53:08.436Z"
   - criterion_id: A3
     status: pass
     evidence_ref: "'declined card reports its OWN size': with budget 1000 and cards 900+900 the diagnostic is 'card 900 bytes exceeds N available (budget 1000)', never the cumulative 1802, and 'whole-card budget' no longer appears. Truncation diagnostic states the full equation: 'card 9000 bytes = K kept + E elided'."
