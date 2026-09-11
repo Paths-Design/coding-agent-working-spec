@@ -70,7 +70,10 @@ import type { HookPackV1 } from './types';
 // adopts per-card advisory admission: truncate-to-fit with an explicit elided
 // marker instead of dropping the whole card and starving later handlers. Deny
 // control decisions still short-circuit untruncated.
-export const CODEX_PACK_VERSION = 21;
+// Version 22: CAWS-HOOK-ADVISORY-SESSION-DEDUP-01. The Codex dispatch override
+// adopts per-session advisory suppression keyed on exact text, retaining deny
+// precedence and its exit-1 promotion.
+export const CODEX_PACK_VERSION = 22;
 
 export const CODEX_PACK: HookPackV1 = {
   id: 'codex',

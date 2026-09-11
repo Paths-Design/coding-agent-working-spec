@@ -197,22 +197,62 @@ shrank, and every later handler's advisory was dropped whole for that invocation
   that priority only through the codex override, which is why codex-surface
   coverage owns that form.
 
-### 4.3 Output, stage two: per-session ledger (slice 2b — designed, not built)
+### 4.3 Output, stage two: per-session ledger (slice 2b — shipped)
 
-- Content-hash each emitted advisory; suppress an identical repeat within the
-  session, replacing it with nothing (or a one-line acknowledgement).
-- Invalidate suppression when the underlying fact changes (spec/scope/governor
-  identity), so dedup never hides a moved authority — the CASR freshness-barrier
-  lesson.
-- Keep the ledger ephemeral, under the session state dir, fail-open, bounded.
-- Retain the ledger as a measurement seam so a later counterfactual can answer
-  whether the advisory earned its place, rather than assuming it did.
-- Borrow CASR's mechanisms, not its numbers: per-session seen-ledger keyed by the
-  resolved session id, dedup key = target path + semantic content digest (not an
-  opaque id), total silence on repeat, fail-open on a missing or corrupt ledger,
-  oldest-half eviction, and a structured ledger value rather than a bare `true`.
-- Do **not** copy CASR's untended `spools/` growth — 1,855 session directories on
-  disk with no TTL or prune. A CAWS ledger needs retention from the start.
+Harvest first, design second. Measured over the transcript corpus: of 20,322
+injections, **3,293 (16.2%) are session-wide repeats** of text the session had
+already been given, and the worst session spent 238 of its 1,163 advisory
+injections on duplicates. Only 795 of the repeats are *consecutive*; the rest are
+re-surfaced after another card intervenes, so a consecutive-only guard would miss
+roughly four fifths of the win.
+
+Implemented as a per-session, exact-text ledger:
+
+- **Key** = handler name plus sha256 over the advisory's exact bytes (`od`-based, so
+  shell string normalization cannot make two different cards collide). Any wording
+  or fact change therefore re-surfaces the advisory — the CASR freshness lesson,
+  achieved by construction rather than by a separate change witness.
+- **Ledger** = `<CAWS_HOME>/state/sessions/<percent-encoded-sid>/advisory-seen.txt`,
+  the same per-session machine-state directory `reprieve.sh` already uses. It is
+  operational cache (gitignored), never governance state, and never leaves the
+  machine.
+- **Bound** = `CAWS_HOOK_ADVISORY_DEDUP_MAX` (default 4096), appended then trimmed
+  so the post-record count never exceeds the cap.
+- **Fail-open** = an unknown session, a missing/unreadable/unwritable/oversized
+  ledger, or a missing digest tool all mean *emit*. Dedup engages only when it can
+  record, so it can never suppress advice it could not have recorded.
+- **Auditable** = every suppression prints `[handler] advisory surfaced before in
+  this session and suppressed` on stderr, so "the guard did not fire" stays
+  distinguishable from "it fired and was deduplicated".
+- **Recorded only on delivery, not on composition** = keys are staged in a
+  dispatch-scoped file and committed at the end of the dispatch, and only when it
+  returned without a blocking decision. A card the budget omitted, or that a later
+  handler's block discarded, never reaches the model — so it is never recorded and
+  its retry still surfaces. Two early cuts got this wrong and silently ate the
+  retry.
+- **Offer bypass** = a card carrying a machine-adapter message offer bypasses dedup
+  entirely, because settlement reads the card that carries the offer. The offer
+  sidecar is created before the handler runs so the composer can see it.
+
+Borrowed from CASR: per-session keying, content identity, silence on repeat,
+fail-open, bounded state. Deliberately **not** borrowed: CASR's Python bridge and
+repo-layout coupling (this is bash plus the pack's own shipped helper), its
+governor-anchor registry, its refresh **block** path (a CAWS advisory must never
+gain denial authority), and its untended `spools/` growth — 1,855 session
+directories with no TTL or prune. The ledger is trimmed rather than pruned by age,
+and a ledger whose trim cannot be written is dropped outright: a fresh ledger
+means "emit", whereas a stuck oversized one is a wrong-suppression risk.
+
+**Two named limitations, not oversights.** First, suppression is invalidated by
+*content change*, not by a witnessed authority change: a guard whose message is
+identical while the underlying authority moved stays suppressed for the session.
+Closing that needs a change witness CAWS does not have, and it is the one place
+the CASR freshness barrier is stronger than this. Second, the key is taken after
+the handler's stdout goes through command substitution, which strips a trailing
+newline; two advisories differing only by a trailing newline are therefore treated
+as identical. The model-visible text was already normalized the same way before
+this change, so no *visible* content is hidden, but the limitation is real and is
+recorded here rather than claimed away.
 
 ## 5. Slices
 
@@ -220,7 +260,7 @@ shrank, and every later handler's advisory was dropped whole for that invocation
 |---|---|---|
 | 1 | Bounded input: payload file + truncation marker; `audit.sh`/`scan-secrets.sh` read the file | A multi-MB tool response no longer fails the hook; env size is independent of payload size |
 | 2a | Composer: per-card admission, truncate-to-fit, accurate per-card refusal accounting | One large card cannot starve later advisories |
-| 2b | Session-scoped dedup ledger with authority-change invalidation | Repeated advisories stop recurring; changed facts still surface |
+| 2b | Session-scoped exact-text dedup ledger, bounded and fail-open | Repeated advisories stop recurring; changed advice still surfaces |
 
 ## 6. Non-claims
 

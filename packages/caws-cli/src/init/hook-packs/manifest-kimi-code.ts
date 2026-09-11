@@ -41,7 +41,10 @@ import type { HookPackV1 } from './types';
 // Version 6: CAWS-HOOK-ADVISORY-BUDGET-TIERS-01. The Kimi dispatch override
 // adopts per-card advisory admission (truncate-to-fit with an explicit elided
 // marker) while retaining its exit-1-to-2 promotion and deny precedence.
-export const KIMI_CODE_PACK_VERSION = 6;
+// Version 7: CAWS-HOOK-ADVISORY-SESSION-DEDUP-01. The Kimi dispatch override
+// adopts per-session advisory suppression keyed on exact text while retaining
+// its exit-1-to-2 promotion and deny precedence.
+export const KIMI_CODE_PACK_VERSION = 7;
 
 export const KIMI_CODE_PACK: HookPackV1 = {
   id: 'kimi-code',

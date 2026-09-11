@@ -226,11 +226,127 @@ _rh_pack_python_helper() {
   done
   return 0
 }
+
+
+# ---------------------------------------------------------------------------
+# Advisory session dedup (CAWS-HOOK-ADVISORY-SESSION-DEDUP-01)
+#
+# A handler that fires on every tool call re-injects byte-identical advice every
+# time (measured: 16% of all injected advisories are session-wide repeats).
+# Suppression is keyed on the EXACT advisory bytes, so a changed fact always
+# re-surfaces. Nothing here is authority, and nothing here can suppress a control
+# decision: those short-circuit before this point.
+#
+# Fail-open posture: dedup engages only when it can do so safely. An unknown
+# session, a missing/oversized/unwritable ledger, or a missing digest tool all
+# mean "emit", never "suppress".
+# ---------------------------------------------------------------------------
+_rh_dedup_enabled() {
+  [[ "${CAWS_HOOK_ADVISORY_DEDUP:-1}" == "0" ]] && return 1
+  [[ -n "${_rh_session_id:-}" && "${_rh_session_id}" != "unknown" ]] || return 1
+  command -v shasum >/dev/null 2>&1 || return 1
+  return 0
+}
+
+_rh_handler_has_live_offer() {
+  [[ -n "${CAWS_HANDLER_OFFER_FILE:-}" && -s "${CAWS_HANDLER_OFFER_FILE:-}" ]]
+}
+
+# This session's ledger path. Mirrors reprieve.sh's session-state resolution
+# (CAWS-HOME tier, sanitized id). Escaping percent-encodes every byte outside
+# [A-Za-z0-9._-] so two distinct session ids cannot collide into one ledger.
+_rh_dedup_ledger() {
+  local home=""
+  if [[ -n "${CAWS_HOME:-}" ]]; then
+    home="$CAWS_HOME"
+  elif [[ -n "${HOME:-}" ]]; then
+    home="${HOME}/.caws"
+  else
+    return 1
+  fi
+  local safe
+  safe=$(printf '%s' "$_rh_session_id" | od -An -tu1 -v \
+    | awk '{for (i=1;i<=NF;i++) printf "%02x", $i}')
+  [[ -n "$safe" ]] || return 1
+  printf '%s/state/sessions/%s/advisory-seen.txt\n' "$home" "$safe"
+}
+
+# sha256 of the EXACT advisory bytes. `od` keeps the digest independent of shell
+# string normalization, so "X" and "X\n" are different keys.
+_rh_dedup_key() {
+  local handler="$1" text="$2" digest
+  digest=$(printf '%s' "$text" | od -An -tu1 -v | shasum -a 256 2>/dev/null | cut -d' ' -f1)
+  [[ "$digest" =~ ^[a-f0-9]{64}$ ]] || return 1
+  printf '%s\t%s\n' "$handler" "$digest"
+}
+
+_rh_dedup_max() {
+  local max="${CAWS_HOOK_ADVISORY_DEDUP_MAX:-4096}"
+  [[ "$max" =~ ^[0-9]{1,9}$ ]] || max=4096
+  printf '%s' "$(( 10#$max ))"
+}
+
+# 0 when this exact advisory was already recorded for this handler this session.
+# Any unsafe ledger condition returns non-zero, so the caller emits.
+_rh_dedup_seen() {
+  local key="$1" ledger dir lines max ceiling
+  ledger="$(_rh_dedup_ledger)" || return 1
+  [[ -n "$ledger" && -f "$ledger" && -r "$ledger" ]] || return 1
+  # An unappendable ledger cannot record a suppression, so it must not cause one.
+  [[ -w "$ledger" ]] || return 1
+  dir="$(dirname "$ledger")"
+  [[ -w "$dir" ]] || return 1
+  max="$(_rh_dedup_max)"
+  ceiling=$(( max * 4 ))
+  # A corrupt or overgrown ledger is not trusted as evidence of what surfaced.
+  lines=$(wc -l < "$ledger" 2>/dev/null | tr -d ' ')
+  [[ "$lines" =~ ^[0-9]+$ ]] || return 1
+  (( lines > ceiling )) && return 1
+  grep -F -x -q -- "$key" "$ledger" 2>/dev/null
+}
+
+# Commit the pending keys collected during this dispatch. Called only after the
+# dispatch is known to deliver: a blocking decision discards the composed output,
+# so advice recorded in that dispatch never reached the model and must not
+# suppress its retry.
+_rh_dedup_flush() {
+  local pending="$1" ledger max dir lines tmp
+  [[ -n "$pending" && -s "$pending" ]] || return 0
+  ledger="$(_rh_dedup_ledger)" || return 0
+  [[ -n "$ledger" ]] || return 0
+  max="$(_rh_dedup_max)"
+  dir="$(dirname "$ledger")"
+  mkdir -p "$dir" 2>/dev/null || return 0
+  cat "$pending" >> "$ledger" 2>/dev/null || return 0
+  lines=$(wc -l < "$ledger" 2>/dev/null | tr -d ' ')
+  [[ "$lines" =~ ^[0-9]+$ ]] || return 0
+  if (( lines > max )); then
+    tmp="${ledger}.tmp.$$"
+    if tail -n "$max" "$ledger" > "$tmp" 2>/dev/null; then
+      mv -f "$tmp" "$ledger" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+    else
+      rm -f "$tmp" 2>/dev/null
+    fi
+    # If the ledger is still over the bound the trim could not be written, so
+    # drop it: a fresh ledger means "emit", whereas a stuck oversized one is a
+    # wrong-suppression risk. _rh_dedup_seen also refuses over-ceiling ledgers.
+    lines=$(wc -l < "$ledger" 2>/dev/null | tr -d ' ')
+    if [[ "$lines" =~ ^[0-9]+$ ]] && (( lines > max )); then
+      rm -f "$ledger" 2>/dev/null
+    fi
+  fi
+  return 0
+}
+
 # ---------------------------------------------------------------------------
 # run_handlers [--short-circuit-on-block] <handler-entry>...
 # ---------------------------------------------------------------------------
 run_handlers() {
   local short_circuit=0
+  # Dispatch-scoped staging for dedup keys, declared with the other locals so it
+  # exists on every path: a declaration placed inside a conditional block is
+  # unbound under `set -u` when that block does not run.
+  local _dedup_pending=""
   if [[ "${1:-}" == "--short-circuit-on-block" ]]; then
     short_circuit=1
     shift
@@ -299,6 +415,13 @@ run_handlers() {
   local entries
   entries=("$@")
 
+  # Stage dedup keys for the duration of this dispatch. They are committed only
+  # if the dispatch delivers (see the tail of this function), because a blocking
+  # decision discards every composed card.
+  if _rh_dedup_enabled; then
+    _dedup_pending=$(mktemp 2>/dev/null) || _dedup_pending=""
+  fi
+
   # CAWS-HOOKPACK-DISPATCH-EMPTY-HANDLERS-CRASH-001: bash 3.2 (macOS default
   # /bin/bash) throws "unbound variable" expanding "${entries[@]}" when
   # entries is a zero-length array under `set -u` -- even though the intended
@@ -348,11 +471,8 @@ run_handlers() {
       continue
     fi
 
-    local t_start=0
-    if (( timing )); then
-      t_start=$(_rh_ms_now)
-    fi
-
+    # Message-offer sidecar first: the composer consults it to decide whether
+    # this card carries a deliverable, which must not be deduplicated.
     local stderr_file
     stderr_file=$(mktemp)
     local handler_offer_file=""
@@ -362,6 +482,12 @@ run_handlers() {
     else
       unset CAWS_HANDLER_OFFER_FILE 2>/dev/null || true
     fi
+
+    local t_start=0
+    if (( timing )); then
+      t_start=$(_rh_ms_now)
+    fi
+
     local stdout_buf
     stdout_buf=$(printf '%s' "$HOOK_INPUT_JSON" \
                   | "$handler_path" "$@" 2>"$stderr_file")
@@ -411,6 +537,21 @@ run_handlers() {
       local additional_context=""
       additional_context=$(_rh_additional_context "$stdout_buf" || true)
       if [[ -n "$additional_context" ]]; then
+        # CAWS-HOOK-ADVISORY-SESSION-DEDUP-01: advice this session already
+        # received from this handler, byte-identical, is suppressed. The skip is
+        # reported so "did not fire" stays distinguishable from "deduplicated".
+        local _dedup_key="" _dedup_skip=0 _dedup_emit=0
+        if _rh_dedup_enabled && ! _rh_handler_has_live_offer; then
+          _dedup_key="$(_rh_dedup_key "$handler" "$additional_context")" || _dedup_key=""
+          if [[ -n "$_dedup_key" ]] && _rh_dedup_seen "$_dedup_key"; then
+            _dedup_skip=1
+            printf '[%s] advisory suppressed: identical text already surfaced in this session\n' \
+              "$handler" >&2
+          fi
+        fi
+        if (( _dedup_skip )); then
+          :
+        else
         # CAWS-HOOK-ADVISORY-BUDGET-TIERS-01. The previous check measured the
         # CUMULATIVE candidate: one oversized card did not just omit itself, the
         # running total never shrank and every later handler's advisory was
@@ -439,6 +580,7 @@ run_handlers() {
             advisory_context="$advisory_context"$'\n\n'"$additional_context"
           fi
           [[ -n "$advisory_template" ]] || advisory_template="$stdout_buf"
+          _dedup_emit=1
           offer_action="selected"
           offer_reason="whole advisory selected within budget"
         else
@@ -528,7 +670,8 @@ run_handlers() {
               advisory_context="$advisory_context"$'\n\n'"$truncated_card"
             fi
             [[ -n "$advisory_template" ]] || advisory_template="$stdout_buf"
-            offer_action="selected"
+            _dedup_emit=1
+          offer_action="selected"
             offer_reason="advisory truncated to fit remaining budget"
             printf '[%s] advisory truncated: card %s bytes = %s kept + %s elided, capped at %s (budget %s)\n' \
               "$handler" "$card_bytes" "$actual_kept" "$elided" "$card_cap" "$advisory_budget" >&2
@@ -540,6 +683,13 @@ run_handlers() {
             printf '[%s] optional advisory omitted: card %s bytes exceeds %s available (budget %s)\n' \
               "$handler" "$card_bytes" "$available_bytes" "$advisory_budget" >&2
           fi
+        fi
+        # P1: stage only advice this dispatch actually emits. A budget-omitted or
+        # control-displaced card is never staged, and a later BLOCK discards the
+        # whole dispatch without committing anything, so its retry still surfaces.
+        if (( _dedup_emit )) && [[ -n "$_dedup_key" && -n "$_dedup_pending" ]]; then
+          printf '%s\n' "$_dedup_key" >> "$_dedup_pending" 2>/dev/null || true
+        fi
         fi
       elif _rh_has_additional_context_key "$stdout_buf"; then
         printf '[%s] optional advisory omitted: additionalContext must be a non-empty string\n' \
@@ -579,6 +729,16 @@ run_handlers() {
     fi
   fi
   [[ -n "$composed_stdout" ]] && printf '%s\n' "$composed_stdout"
+
+  # Commit staged dedup keys only when this dispatch delivered normally. A
+  # blocking decision (max_exit 2) discarded every composed card, so nothing was
+  # surfaced and nothing may be suppressed on the retry.
+  if [[ -n "$_dedup_pending" ]]; then
+    if (( dry_run == 0 && max_exit < 2 )); then
+      _rh_dedup_flush "$_dedup_pending"
+    fi
+    rm -f "$_dedup_pending" 2>/dev/null || true
+  fi
 
   if (( dry_run )); then
     return 0
