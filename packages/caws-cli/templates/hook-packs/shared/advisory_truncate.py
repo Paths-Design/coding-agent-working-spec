@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+# CAWS-MANAGED-HOOK
+# hook_pack: shared
+# hook_pack_version: 1
+# caws_min_major: 11
+# lineage_refs: (new — CAWS-HOOK-ADVISORY-BUDGET-TIERS-01)
+# edit_stance: YOURS TO EDIT. This is a starting hook helper, not a locked one.
+#   The one edit to avoid is making it emit a partially decoded character, which
+#   is the failure this helper exists to prevent.
 """Byte-exact truncation of advisory text for the CAWS hook composer.
 
 CAWS-HOOK-ADVISORY-BUDGET-TIERS-01. The hook composer must fit an advisory card

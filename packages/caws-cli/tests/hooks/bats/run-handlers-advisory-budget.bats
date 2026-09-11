@@ -235,6 +235,35 @@ EOF
   refute_output --partial 'truncated'
 }
 
+@test "advisory budget: a helper emitting an invalid byte is rejected, not composed" {
+  # An adversarial review broke the earlier validation with a stub interpreter
+  # that emitted a single invalid byte (0xF0). That response is bounded,
+  # non-empty, and a byte prefix of the source, so only a UTF-8 validity check
+  # catches it. The composer must omit the card rather than let a replacement
+  # character into an advisory an agent reads.
+  local fake_hooks
+  fake_hooks="$(mktemp -d "${TMPDIR:-/tmp}/caws-bats-rh-utf8bad-XXXXXX")"
+  cat > "$fake_hooks/utf8.sh" <<'EOF'
+#!/usr/bin/env bash
+cat >/dev/null
+python3 -c 'import json; print(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":chr(0x1F600)*400}}))'
+EOF
+  chmod +x "$fake_hooks/utf8.sh"
+
+  run env -i PATH="$PATH" LC_ALL=en_US.UTF-8 CAWS_HOOK_ADVISORY_BUDGET_BYTES=1000 bash -c "
+    source '$CAWS_TEST_HOOKS_DIR/lib/run-handlers.sh'
+    # A stub interpreter that emits one invalid UTF-8 byte.
+    python3() { printf '\360'; return 0; }
+    export HOOKS_DIR='$fake_hooks' HOOK_INPUT_JSON='{}'
+    out=\"\$(run_handlers utf8.sh 2>/dev/null)\"
+    ctx=\"\$(printf '%s' \"\$out\" | jq -r '.hookSpecificOutput.additionalContext // empty' 2>/dev/null)\"
+    printf 'replacement=%s\n' \"\$(printf '%s' \"\$ctx\" | grep -c $'\\xef\\xbf\\xbd' || true)\"
+  "
+  rm -rf "$fake_hooks"
+
+  assert_line 'replacement=0'
+}
+
 @test "advisory budget: a budget too small for content declines instead of emitting a bare marker" {
   BUDGET=40 compose 5000
 

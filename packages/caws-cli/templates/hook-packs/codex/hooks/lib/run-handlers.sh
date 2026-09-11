@@ -158,9 +158,18 @@ _rh_truncate_complete_utf8() {
     if (( status == 0 )); then
       local out_bytes
       out_bytes=$(LC_ALL=C printf '%s' "$out" | wc -c | tr -d ' ')
-      # Validate the result rather than trusting it: bounded, and a byte prefix
-      # of the source. A malformed response must not corrupt an advisory.
+      # Validate the result rather than trusting it: bounded, non-empty, a byte
+      # prefix of the source, AND valid UTF-8. The prefix and bound checks alone
+      # accept a response truncated mid-character (a lone lead byte is a valid
+      # prefix), which the harness then renders as U+FFFD. iconv is the decoder
+      # of record for the last check; when it is unavailable the check is
+      # skipped rather than blocking the cut.
+      local utf8_ok=1
+      if command -v iconv >/dev/null 2>&1; then
+        printf '%s' "$out" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1 || utf8_ok=0
+      fi
       if [[ "$out_bytes" =~ ^[0-9]+$ ]] && (( out_bytes > 0 && out_bytes <= max_bytes )) \
+         && (( utf8_ok == 1 )) \
          && printf '%s' "$text" | head -c "$out_bytes" | cmp -s - <(printf '%s' "$out"); then
         printf '%s' "$out"
         return 0
