@@ -66,7 +66,11 @@ import type { HookPackV1 } from './types';
 // or above CAWS_HOOK_INLINE_PAYLOAD_MAX_BYTES is written to a dispatch-scoped
 // file instead of the process environment, and apply_patch normalization still
 // runs against the full payload read from that file.
-export const CODEX_PACK_VERSION = 20;
+// Version 21: CAWS-HOOK-ADVISORY-BUDGET-TIERS-01. The Codex dispatch override
+// adopts per-card advisory admission: truncate-to-fit with an explicit elided
+// marker instead of dropping the whole card and starving later handlers. Deny
+// control decisions still short-circuit untruncated.
+export const CODEX_PACK_VERSION = 21;
 
 export const CODEX_PACK: HookPackV1 = {
   id: 'codex',

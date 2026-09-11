@@ -38,7 +38,10 @@ import type { HookPackV1 } from './types';
 // "unbound variable" on bash 3.2 (macOS default /bin/bash).
 // Version 5: CAWS-MESSAGE-OFFER-SETTLEMENT-DELIVERY-01. The Kimi runner
 // preserves bounded advisory membership while retaining deny promotion.
-export const KIMI_CODE_PACK_VERSION = 5;
+// Version 6: CAWS-HOOK-ADVISORY-BUDGET-TIERS-01. The Kimi dispatch override
+// adopts per-card advisory admission (truncate-to-fit with an explicit elided
+// marker) while retaining its exit-1-to-2 promotion and deny precedence.
+export const KIMI_CODE_PACK_VERSION = 6;
 
 export const KIMI_CODE_PACK: HookPackV1 = {
   id: 'kimi-code',

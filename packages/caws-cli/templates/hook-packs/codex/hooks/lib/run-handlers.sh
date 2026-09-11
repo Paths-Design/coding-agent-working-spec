@@ -115,6 +115,84 @@ _rh_record_offer() {
   ' "$offer_file" >> "$CAWS_HOOK_SETTLEMENT_FILE" 2>/dev/null || true
 }
 
+
+# ---------------------------------------------------------------------------
+# _rh_truncate_complete_utf8 <text> <max-bytes>
+# Print the longest prefix of <text> that is at most <max-bytes> bytes AND ends
+# on a character boundary.
+#
+# WHY THIS EXISTS (CAWS-HOOK-ADVISORY-BUDGET-TIERS-01). `head -c` can stop after
+# a UTF-8 LEAD byte whose continuation bytes were cut. Such a trailing lead byte
+# is an incomplete character and the harness renders it as U+FFFD. A walk-back
+# that inspects the last byte of the CUT string cannot tell a complete
+# multi-byte character from an orphaned lead byte: both end in a byte >= 0x80.
+# The decidable question is asked at the END of the SOURCE instead. Scan the
+# source's character boundaries; the final character spans [start, total). If
+# that span does not fit inside max-bytes, keeping `start` bytes drops the whole
+# trailing character.
+#
+# Pure byte arithmetic in the C locale, no external process per character. Any
+# unexpected shape falls back to a plain cut so this can never fail a dispatch.
+# ---------------------------------------------------------------------------
+_rh_truncate_complete_utf8() {
+  local text="$1"
+  local max_bytes="$2"
+  [[ "$max_bytes" =~ ^[0-9]+$ ]] || { printf '%s' "$text"; return 0; }
+  (( max_bytes <= 0 )) && return 0
+
+  # Byte-exact, character-safe truncation. Bash cannot express this: substring
+  # expansion indexes by CHARACTER in a UTF-8 locale, and assembling the output
+  # from printf %b octal escapes re-interprets them. The cut therefore lives in
+  # the pack's shipped helper (advisory_truncate.py), alongside
+  # classify_command.py, which is already required on this path.
+  local total
+  total=$(LC_ALL=C printf '%s' "$text" | wc -c | tr -d ' ')
+  [[ "$total" =~ ^[0-9]+$ ]] || { printf '%s' "$text"; return 0; }
+  (( total <= max_bytes )) && { printf '%s' "$text"; return 0; }
+
+  local script out status
+  script="$(_rh_pack_python_helper advisory_truncate.py)"
+  if [[ -n "$script" && -f "$script" && -x "$script" ]] && command -v python3 >/dev/null 2>&1; then
+    out="$(printf '%s' "$text" | python3 "$script" "$max_bytes" 2>/dev/null)"
+    status=$?
+    if (( status == 0 )); then
+      local out_bytes
+      out_bytes=$(LC_ALL=C printf '%s' "$out" | wc -c | tr -d ' ')
+      # Validate the result rather than trusting it: bounded, non-empty, a byte
+      # prefix of the source, AND valid UTF-8. The prefix and bound checks alone
+      # accept a response truncated mid-character (a lone lead byte is a valid
+      # prefix), which the harness then renders as U+FFFD. iconv is the decoder
+      # of record for the last check; when it is unavailable the check is
+      # skipped rather than blocking the cut.
+      local utf8_ok=1
+      if command -v iconv >/dev/null 2>&1; then
+        printf '%s' "$out" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1 || utf8_ok=0
+      fi
+      if [[ "$out_bytes" =~ ^[0-9]+$ ]] && (( out_bytes > 0 && out_bytes <= max_bytes )) \
+         && (( utf8_ok == 1 )) \
+         && printf '%s' "$text" | head -c "$out_bytes" | cmp -s - <(printf '%s' "$out"); then
+        printf '%s' "$out"
+        return 0
+      fi
+    fi
+  fi
+
+  # Fallback: omit rather than emit a possibly split character. The caller's
+  # diagnostic already reports the omission; a corrupt card would be worse.
+  return 0
+}
+
+# Locate a shipped pack helper next to this library (lib/ -> pack root).
+_rh_pack_python_helper() {
+  local name="$1"
+  local here
+  here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  local candidate
+  for candidate in "${CAWS_SHARED_LIB_DIR:-}/../$name" "$here/../$name"; do
+    [[ -n "$candidate" && -f "$candidate" ]] && { printf '%s' "$candidate"; return 0; }
+  done
+  return 0
+}
 # ---------------------------------------------------------------------------
 # run_handlers [--short-circuit-on-block] <handler-entry>...
 # ---------------------------------------------------------------------------
@@ -296,18 +374,135 @@ run_handlers() {
       local additional_context=""
       additional_context=$(_rh_additional_context "$stdout_buf" || true)
       if [[ -n "$additional_context" ]]; then
-        local candidate_context="$additional_context"
-        [[ -z "$advisory_context" ]] || candidate_context="$advisory_context"$'\n\n'"$additional_context"
-        local candidate_bytes
-        candidate_bytes=$(_rh_byte_count "$candidate_context")
-        if (( candidate_bytes <= advisory_budget )); then
-          advisory_context="$candidate_context"
+        # CAWS-HOOK-ADVISORY-BUDGET-TIERS-01. The previous check measured the
+        # CUMULATIVE candidate: one oversized card did not just omit itself, the
+        # running total never shrank and every later handler's advisory was
+        # dropped whole for that invocation. Two properties are required, and the
+        # first cut of this fix broke the second:
+        #   (i)  a card that does not fit is truncated-with-marker, not dropped;
+        #   (ii) truncation must LEAVE ROOM for the cards behind it, or it
+        #        reproduces the very starvation it was meant to remove.
+        # So truncation is capped at (available - floor), reserving
+        # CAWS_HOOK_ADVISORY_CARD_FLOOR_BYTES for later handlers. Only a final
+        # card that arrives with nothing left over is genuinely omitted, and that
+        # omission is reported with the card's OWN size.
+        local card_bytes available_bytes card_fits=0
+        card_bytes=$(_rh_byte_count "$additional_context")
+        if [[ -n "$advisory_context" ]]; then
+          available_bytes=$(( advisory_budget - $(_rh_byte_count "$advisory_context") - 2 ))
+        else
+          available_bytes="$advisory_budget"
+        fi
+        (( available_bytes < 0 )) && available_bytes=0
+        (( card_bytes <= available_bytes )) && card_fits=1
+        if (( card_fits )); then
+          if [[ -z "$advisory_context" ]]; then
+            advisory_context="$additional_context"
+          else
+            advisory_context="$advisory_context"$'\n\n'"$additional_context"
+          fi
           [[ -n "$advisory_template" ]] || advisory_template="$stdout_buf"
           offer_action="selected"
           offer_reason="whole advisory selected within budget"
         else
-          printf '[%s] optional advisory omitted: whole-card budget %s > %s bytes\n' \
-            "$handler" "$candidate_bytes" "$advisory_budget" >&2
+          # A card that does not fit whole may consume at most a 1/4 share of the
+          # budget. A fixed reserve is not enough: with a 3000-byte budget a
+          # 2000-byte card capped at (available - 256) still took 91% of it and
+          # left a third card nothing, which is the same starvation shifted by one
+          # position. Capping a non-fitting card at a share bounds any single
+          # handler's claim on a shared resource whose other claimants are unknown
+          # at this point in the chain. A budget that cannot hold every card still
+          # omits the overflow -- that is the budget doing its job -- but no single
+          # card can exhaust it.
+          #
+          # Numeric knobs are decimal-normalized before arithmetic: a value like
+          # "08" is an invalid OCTAL literal to Bash and aborts the dispatch, and
+          # an out-of-range value silently wraps. Anything unusable falls back to
+          # the default rather than failing the hook.
+          local share="${CAWS_HOOK_ADVISORY_CARD_SHARE_DIVISOR:-4}"
+          [[ "$share" =~ ^[0-9]{1,9}$ ]] || share=4
+          share=$(( 10#$share ))
+          (( share < 1 )) && share=1
+          local floor="${CAWS_HOOK_ADVISORY_CARD_FLOOR_BYTES:-256}"
+          [[ "$floor" =~ ^[0-9]{1,9}$ ]] || floor=256
+          floor=$(( 10#$floor ))
+          local card_cap=$(( advisory_budget / share ))
+          (( card_cap > available_bytes - floor )) && card_cap=$(( available_bytes - floor ))
+          (( card_cap > available_bytes )) && card_cap="$available_bytes"
+          (( card_cap < 0 )) && card_cap=0
+          local minimum_keep=48
+          local keep_bytes=0
+          if (( card_cap >= minimum_keep )); then
+            # The marker must be charged as content, and its own length depends on
+            # the elided count, so size it once with a placeholder that can only
+            # over-reserve (a placeholder of 8 nines is >= any reachable count).
+            # The marker's length grows with the elided count, so reserve for
+            # the ACTUAL count, not a fixed placeholder: a nine-digit elision
+            # once outgrew an eight-digit reservation and emitted one byte over
+            # budget. Iterate the two dependent values to a fixed point (bounded).
+            local hint note_bytes try=0
+            hint="… [truncated: 99999999 bytes elided]"
+            note_bytes=$(_rh_byte_count "$hint")
+            while (( try < 4 )); do
+              local candidate_keep=$(( card_cap - note_bytes ))
+              (( candidate_keep < 0 )) && candidate_keep=0
+              local candidate_elided=$(( card_bytes - candidate_keep ))
+              local candidate_note
+              candidate_note="… [truncated: ${candidate_elided} bytes elided]"
+              local candidate_note_bytes
+              candidate_note_bytes=$(_rh_byte_count "$candidate_note")
+              if (( candidate_note_bytes == note_bytes )); then
+                break
+              fi
+              note_bytes="$candidate_note_bytes"
+              try=$(( try + 1 ))
+            done
+            keep_bytes=$(( card_cap - note_bytes ))
+            (( keep_bytes < 0 )) && keep_bytes=0
+          fi
+          if (( keep_bytes >= minimum_keep )); then
+            # Cut in BYTES. Bash substring expansion indexes by CHARACTER in a
+            # UTF-8 locale, so the previous `${s:0:n}` emitted roughly double the
+            # byte budget for multi-byte content -- and wrapping the result in
+            # `LC_ALL=C printf` did NOT help, because the expansion had already
+            # happened. `head -c` is a byte-stream operation, so its unit matches
+            # `_rh_byte_count` by construction. It can stop mid-character, so walk
+            # back off any UTF-8 continuation byte to keep the emitted text valid,
+            # then report the bytes ACTUALLY kept rather than the bytes requested.
+            local truncated_card elided marker actual_kept
+            truncated_card="$(_rh_truncate_complete_utf8 "$additional_context" "$keep_bytes")"
+            actual_kept=$(_rh_byte_count "$truncated_card")
+            # A helper that returned nothing (failure, or a limit below one
+            # character) must OMIT the card, not select a marker-only string with
+            # no content behind it: an agent reading "truncated" learns nothing
+            # and the marker consumes budget for no signal.
+            if (( actual_kept <= 0 )); then
+              printf '[%s] optional advisory omitted: no complete character fits %s bytes (card %s, budget %s)\n' \
+                "$handler" "$keep_bytes" "$card_bytes" "$advisory_budget" >&2
+              actual_kept=-1
+            fi
+            if (( actual_kept >= 0 )); then
+            elided=$(( card_bytes - actual_kept ))
+            marker="… [truncated: ${elided} bytes elided]"
+            truncated_card="${truncated_card}${marker}"
+            if [[ -z "$advisory_context" ]]; then
+              advisory_context="$truncated_card"
+            else
+              advisory_context="$advisory_context"$'\n\n'"$truncated_card"
+            fi
+            [[ -n "$advisory_template" ]] || advisory_template="$stdout_buf"
+            offer_action="selected"
+            offer_reason="advisory truncated to fit remaining budget"
+            printf '[%s] advisory truncated: card %s bytes = %s kept + %s elided, capped at %s (budget %s)\n' \
+              "$handler" "$card_bytes" "$actual_kept" "$elided" "$card_cap" "$advisory_budget" >&2
+            fi
+          else
+            # Too little room to carry content (or to leave room for the cards
+            # behind this one): declining beats emitting a marker with nothing
+            # behind it, and beats consuming the last of the budget.
+            printf '[%s] optional advisory omitted: card %s bytes exceeds %s available (budget %s)\n' \
+              "$handler" "$card_bytes" "$available_bytes" "$advisory_budget" >&2
+          fi
         fi
       elif _rh_has_additional_context_key "$stdout_buf"; then
         printf '[%s] optional advisory omitted: additionalContext must be a non-empty string\n' \

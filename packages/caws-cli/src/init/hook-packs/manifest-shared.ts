@@ -402,7 +402,13 @@ import { isAdapterCoveredSurface } from './types';
 // inline TOOL_*_JSON marking the inline representation absent by design. A
 // multi-megabyte tool response previously pushed the environment past ARG_MAX and
 // every dispatch fork died with `Argument list too long`.
-export const SHARED_PACK_VERSION = 65;
+// v66 (CAWS-HOOK-ADVISORY-BUDGET-TIERS-01): run-handlers.sh admits advisory
+// cards one at a time against the bytes still available instead of measuring the
+// cumulative candidate. An oversized card is truncated to fit with an explicit
+// elided-byte marker rather than dropped whole, and a declined card's diagnostic
+// names its own size, so one large guard can no longer starve every later
+// handler's advisory for that invocation.
+export const SHARED_PACK_VERSION = 66;
 
 /**
  * The vendored TELEMETRY rows: the turn-log fold (session-log.sh +
@@ -698,6 +704,12 @@ export const SHARED_PACK: HookPackV1 = {
     {
       destPath: '.caws/hooks/classify_command.py',
       sourcePath: 'classify_command.py',
+      executable: true,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/advisory_truncate.py',
+      sourcePath: 'advisory_truncate.py',
       executable: true,
       managed: true,
     },
