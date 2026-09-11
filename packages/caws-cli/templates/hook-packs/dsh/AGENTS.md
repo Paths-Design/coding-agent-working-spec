@@ -1,7 +1,7 @@
 <!--
 # CAWS-MANAGED-HOOK
 # hook_pack: dsh
-# hook_pack_version: 2
+# hook_pack_version: 3
 # caws_min_major: 11
 # lineage_refs: 1,4,6,8,11,12,13,16,17,19,22,23,24,25,26,27,28,29,30,31
 # edit_stance: YOURS TO EDIT. This is a starting hook, not a locked one — shape it
@@ -97,17 +97,27 @@ the profile, and the profile is where to check it — a settings key is not part
 of this surface's wiring, so `~/.dsh/settings.yaml` says nothing either way
 about whether the guard chain is live.
 
-Read the live profile:
+A profile's tree is composed in layers, and the layers are not interchangeable:
+**each bundle in the profile's `dsh.profile.bundles` contributes its own patch**
+(declared as `dsh.bundle.patch` in that bundle's `package.json`), then the
+profile's own `cordis.patch.yml`, then any `--patch` overlays. The CAWS plugin
+ids arrive in the **bundle's** patch — the profile's own layer is additional and
+is empty on a stock profile, so reading it alone answers nothing.
+
+Resolve the composed tree rather than assuming which layer carries what:
 
 ```sh
-# the bundles the profile composes (`dsh.profile.bundles` in its package.json)
+# 1. which bundles the profile composes (`dsh.profile.bundles`)
 python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['dsh']['profile']['bundles'])" \
   ~/.dsh/profiles/<name>/package.json
-# the plugins those bundles insert
+# 2. the reference bundle's own patch — the layer carrying the CAWS plugin ids
+#    (the bundle declares it as `dsh.bundle.patch` in its package.json)
+cat ~/.dsh/profiles/node_modules/@caws/dsh-bundle/cordis.patch.yml
+# 3. the profile's own layer, which is additional and may be empty
 cat ~/.dsh/profiles/<name>/cordis.patch.yml
 ```
 
-The CAWS planes are active when the patch inserts the three plugin ids
+The CAWS planes are active when the composed tree carries the three plugin ids
 `caws-hooks`, `caws-session-log`, and `caws-agents-lifecycle`, and a session in a
 `.caws/` repo sees live guard output (a `CAWS hook context` injection on a
 governed tool call, or a guard refusal). Add the reference adapter to a profile

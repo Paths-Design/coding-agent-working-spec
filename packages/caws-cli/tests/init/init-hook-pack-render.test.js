@@ -776,14 +776,39 @@ describe('A8: the DSH description derives its mechanism from the surface registr
 
   test('the doctrine sends the reader to the live profile for wiring, never to a settings key', () => {
     const doctrine = fs.readFileSync(DSH_DOCTRINE, 'utf8');
-    // The two facts that make the check runnable on any machine.
+    // The fact that makes the check runnable on any machine.
     expect(doctrine).toContain('dsh.profile.bundles');
-    expect(doctrine).toContain('cordis.patch.yml');
     // The retired claim shape: inferring "not wired" from the absence of a
     // settings hooks key. That inference is unfalsifiable on this surface and
     // must not return.
     expect(doctrine).not.toMatch(/settings\.yaml[^.]*declares no hooks key/i);
     expect(doctrine).not.toMatch(/no wiring invokes the dispatchers/i);
+  });
+
+  // The retracted derivation: naming the PROFILE's own patch as the layer that
+  // carries the CAWS plugin ids. A profile composes each bundle's patch first,
+  // so the profile patch is an additional layer and is empty on a stock profile.
+  const RETRACTED_WIRING_HOME = /\bprofile'?s (?:own )?`cordis\.patch\.yml`[^.\n]{0,60}\binsert/i;
+
+  test('the doctrine names the bundle patch layer, not the profile patch, as the plugin-id source', () => {
+    const doctrine = fs.readFileSync(DSH_DOCTRINE, 'utf8');
+    // The bundle's own patch is the layer that carries the CAWS inserts.
+    expect(doctrine).toContain('dsh.bundle.patch');
+    expect(doctrine).toMatch(/bundle's own patch|bundle's patch/i);
+    // The retracted rule must be absent...
+    expect(RETRACTED_WIRING_HOME.test(doctrine)).toBe(false);
+    // ...and the matcher must be able to see it, or the line above proves nothing.
+    expect(
+      RETRACTED_WIRING_HOME.test(
+        "plus that profile's `cordis.patch.yml`, which inserts the plugin ids"
+      )
+    ).toBe(true);
+  });
+
+  test('the manifest comment carries the same composition rule as the doctrine', () => {
+    const manifest = fs.readFileSync(MANIFEST_SOURCE, 'utf8');
+    expect(manifest).toContain('dsh.bundle.patch');
+    expect(RETRACTED_WIRING_HOME.test(manifest)).toBe(false);
   });
 
   test('the manifest summary derives its mechanism from the registry', () => {
