@@ -55,3 +55,7 @@ evidence:
     status: pass
     evidence_ref: "npx jest tests/init: A8 arms 'states the registry mechanism', 'sends the reader to the live profile (dsh.profile.bundles + cordis.patch.yml), never a settings key', 'registry projection matches registry.json', 'manifest summary derives from the registry'; 213/213 pass across 12 suites."
     recorded_at: "2026-09-11T00:24:32.775Z"
+  - criterion_id: A3
+    status: pass
+    evidence_ref: "npx jest tests/init: A8 arm 'a real install stamps the doctrine at the bumped pack version and still parses as managed' installs DSH_PACK into a temp repo; header.hookPack=dsh, hookPackVersion=DSH_PACK_VERSION=2, parseManagedHeader non-null."
+    recorded_at: "2026-09-11T00:24:33.435Z"
