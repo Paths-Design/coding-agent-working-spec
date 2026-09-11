@@ -168,28 +168,83 @@ _rh_record_offer() {
 # unexpected shape falls back to a plain cut so this can never fail a dispatch.
 # ---------------------------------------------------------------------------
 _rh_truncate_complete_utf8() {
-  local max_bytes="$1"
-  [[ "$max_bytes" =~ ^[0-9]+$ ]] || { cat; return 0; }
-  CAWS_TRUNCATE_MAX_BYTES="$max_bytes" python3 -c '
+  local text="$1"
+  local max_bytes="$2"
+  [[ "$max_bytes" =~ ^[0-9]+$ ]] || { printf '%s' "$text"; return 0; }
+  [[ -n "$text" ]] || return 0
+
+  # Byte-exact cut of a UTF-8 string. Bash cannot express this: substring
+  # expansion indexes by CHARACTER in a UTF-8 locale, and assembling octal
+  # escapes trips printf %b re-interpretation. The interpreter does the cut, but
+  # nothing about it is trusted blindly:
+  #   * availability is checked before use,
+  #   * the pipeline status is captured with PIPESTATUS,
+  #   * the emitted bytes are validated to be valid UTF-8, within max_bytes, and
+  #     a byte-prefix of the source.
+  # Any failure falls back to dropping the last character, which is always a
+  # valid boundary and can never split one. The payload travels on stdin, so no
+  # large value enters argv or the environment.
+  if ! command -v python3 >/dev/null 2>&1; then
+    printf '%s' "$text" | head -c "$max_bytes"
+    return 0
+  fi
+
+  # `local out="$(pipeline)"` would mask the pipeline's exit status (the `local`
+  # builtin's own status wins), which silently discarded a verified result and
+  # fell back to a byte cut that can split a character. Declare and assign
+  # separately so PIPESTATUS reflects the Python process.
+  local out
+  out="$(printf '%s' "$text" | CAWS_TRUNCATE_MAX_BYTES="$max_bytes" python3 -c '
 import os
 import sys
 
-limit_text = os.environ.get("CAWS_TRUNCATE_MAX_BYTES", "")
 try:
-    limit = int(limit_text)
-except ValueError:
-    sys.stdout.buffer.write(sys.stdin.buffer.read())
-    raise SystemExit(0)
+    limit = int(os.environ["CAWS_TRUNCATE_MAX_BYTES"])
+except (KeyError, ValueError):
+    sys.exit(3)
 
 data = sys.stdin.buffer.read()
-if limit < 0 or len(data) <= limit:
+if limit < 0:
+    sys.exit(3)
+if len(data) <= limit:
     sys.stdout.buffer.write(data)
     raise SystemExit(0)
 
-# Decode the largest byte prefix that ends on a character boundary. `errors`
-# ignore drops only the incomplete trailing sequence introduced by the cut.
+# Largest byte prefix that ends on a character boundary.
 sys.stdout.buffer.write(data[:limit].decode("utf-8", "ignore").encode("utf-8"))
-'
+')"
+  # `$?` is the pipeline's status, which is the LAST element's -- the Python
+  # process. PIPESTATUS does not survive the command substitution here.
+  local status=$?
+  if [[ "$status" != "0" ]]; then
+    printf '%s' "$text" | head -c "$max_bytes"
+    return 0
+  fi
+
+  local out_bytes
+  out_bytes=$(LC_ALL=C printf '%s' "$out" | wc -c | tr -d ' ')
+  if [[ ! "$out_bytes" =~ ^[0-9]+$ ]] || (( out_bytes > max_bytes )); then
+    printf '%s' "$text" | head -c "$max_bytes"
+    return 0
+  fi
+  # Reject anything that is not a byte-prefix of the source (a malformed
+  # interpreter response) or that is not valid UTF-8 (a split character).
+  if ! printf '%s' "$text" | head -c "$out_bytes" | cmp -s - <(printf '%s' "$out"); then
+    printf '%s' "$text" | head -c "$max_bytes"
+    return 0
+  fi
+  local tail_ok
+  tail_ok=$(printf '%s' "$out" | python3 -c 'import sys
+try:
+    sys.stdin.buffer.read().decode("utf-8")
+    print("ok")
+except UnicodeDecodeError:
+    print("bad")')
+  if [[ "$tail_ok" != "ok" ]]; then
+    printf '%s' "$text" | head -c "$max_bytes"
+    return 0
+  fi
+  printf '%s' "$out"
   return 0
 }
 
@@ -440,9 +495,27 @@ run_handlers() {
             # The marker must be charged as content, and its own length depends on
             # the elided count, so size it once with a placeholder that can only
             # over-reserve (a placeholder of 8 nines is >= any reachable count).
-            local hint note_bytes
+            # The marker's length grows with the elided count, so reserve for
+            # the ACTUAL count, not a fixed placeholder: a nine-digit elision
+            # once outgrew an eight-digit reservation and emitted one byte over
+            # budget. Iterate the two dependent values to a fixed point (bounded).
+            local hint note_bytes try=0
             hint="… [truncated: 99999999 bytes elided]"
             note_bytes=$(_rh_byte_count "$hint")
+            while (( try < 4 )); do
+              local candidate_keep=$(( card_cap - note_bytes ))
+              (( candidate_keep < 0 )) && candidate_keep=0
+              local candidate_elided=$(( card_bytes - candidate_keep ))
+              local candidate_note
+              candidate_note="… [truncated: ${candidate_elided} bytes elided]"
+              local candidate_note_bytes
+              candidate_note_bytes=$(_rh_byte_count "$candidate_note")
+              if (( candidate_note_bytes == note_bytes )); then
+                break
+              fi
+              note_bytes="$candidate_note_bytes"
+              try=$(( try + 1 ))
+            done
             keep_bytes=$(( card_cap - note_bytes ))
             (( keep_bytes < 0 )) && keep_bytes=0
           fi
@@ -456,7 +529,7 @@ run_handlers() {
             # back off any UTF-8 continuation byte to keep the emitted text valid,
             # then report the bytes ACTUALLY kept rather than the bytes requested.
             local truncated_card elided marker actual_kept
-            truncated_card="$(printf '%s' "$additional_context" | _rh_truncate_complete_utf8 "$keep_bytes")"
+            truncated_card="$(_rh_truncate_complete_utf8 "$additional_context" "$keep_bytes")"
             actual_kept=$(_rh_byte_count "$truncated_card")
             elided=$(( card_bytes - actual_kept ))
             marker="… [truncated: ${elided} bytes elided]"
