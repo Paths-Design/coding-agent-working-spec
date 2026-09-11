@@ -8,7 +8,12 @@ updated_at: '2026-09-11T00:42:48.739Z'
 created_by_session: 'session-9bb5787d-bf49-4a1f-9627-8439fec62a00'
 blast_radius:
   modules:
-    - 'TODO: list one or more modules this spec touches.'
+    - 'packages/caws-cli/templates/hook-packs/dsh/AGENTS.md (wiring-home derivation + pack version)'
+    - 'packages/caws-cli/src/init/hook-packs/manifest-dsh.ts (pack version + summary accuracy)'
+    - 'packages/caws-cli/src/shell/render/init-hook-pack.ts (install guidance wording)'
+    - 'packages/caws-cli/tests/init/init-hook-pack-render.test.js (A8 arms assert the corrected rule)'
+    - 'packages/caws-cli/tests/init/pack-fingerprint.test.js (dsh coverage + implemented-surface lockstep)'
+    - 'packages/caws-cli/tests/init/pack-fingerprints.json (recorded dsh baseline)'
   data_migration: false
 operational_rollback_slo: 5m
 scope:
@@ -21,11 +26,27 @@ scope:
     - packages/caws-cli/tests/init/pack-fingerprints.json
   out: []
 invariants:
-  - 'TODO: describe one invariant this spec guarantees.'
+  - 'COMPOSITION TRUTH: the description states the profile composition order the runtime documents — each bundle in dsh.profile.bundles contributes its own patch (declared as dsh.bundle.patch in that bundle''s package.json), THEN the profile''s own cordis.patch.yml, then --patch overlays. The profile patch is an additional layer, not the source of the CAWS plugin ids.'
+  - 'NO RETRACTED RULE: no shipped artifact claims that the profile''s cordis.patch.yml inserts the CAWS plugin ids; the derivation names the bundle patch layer and tells the reader to confirm the composed tree rather than infer it.'
+  - 'GUARD COVERAGE LOCKSTEP: every implemented agent surface has a recorded pack-fingerprint baseline, and a lockstep assertion fails loudly when a surface is added or dropped without one, so the omission class cannot recur silently.'
+  - 'NO BEHAVIOR CHANGE: guard logic, dispatcher paths, the surface registry, and the installed-file manifest are untouched. Only the runtime description, its guidance text, and the test-side fingerprint baseline change.'
+  - 'BASELINE IS DERIVED: the recorded dsh fingerprint is computed from the live template tree, never copied, and carries the manifest version so a doctrine edit without a bump fails.'
 acceptance:
   - id: A1
-    given: 'TODO'
-    when: 'TODO'
-    then: 'TODO'
+    given: 'the shipped dsh doctrine, manifest summary, and rendered install guidance'
+    when: 'each is inspected for the wiring-home derivation'
+    then: 'each names the profile bundle list and the per-bundle patch layer (dsh.bundle.patch), and none asserts that the profile''s own cordis.patch.yml is what inserts the CAWS plugin ids'
+  - id: A2
+    given: 'the A8 assertion helpers'
+    when: 'they run against the shipped artifacts and against a control text carrying the retracted rule'
+    then: 'the shipped artifacts pass and the control fails, so the corrected rule is enforced rather than merely present'
+  - id: A3
+    given: 'the fingerprint guard and its recorded baseline'
+    when: 'it runs for the dsh pack'
+    then: 'the live dsh template fingerprint equals the recorded baseline and the recorded version equals DSH_PACK_VERSION'
+  - id: A4
+    given: 'the implemented-surface registry projection'
+    when: 'the fingerprint guard''s covered-pack set is compared against it'
+    then: 'every implemented surface is covered, and removing a surface from the covered set fails an explicit lockstep assertion'
 non_functional: {}
 contracts: []
