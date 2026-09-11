@@ -2,10 +2,11 @@ id: CAWS-HOOK-ADVISORY-BUDGET-TIERS-01
 title: 'The hook advisory composer admits cards against one cumulative budget, so an oversized card silently starves every later handler'''
 risk_tier: 2
 mode: fix
-lifecycle_state: active
-worktree: wt-advisory-budget
+lifecycle_state: closed
+resolution: completed
+closure_notes: 'Advisory composition is now per-card: each card is admitted against the bytes still available, capped at a 1/4 share of the budget (CAWS_HOOK_ADVISORY_CARD_SHARE_DIVISOR) with CAWS_HOOK_ADVISORY_CARD_FLOOR_BYTES held back, so one oversized card can no longer starve later handlers. A non-fitting card is truncated to fit with an honest elision count (kept + elided reconstructs the card exactly; the reservation iterates to a fixed point so a nine-digit elision cannot outgrow it). The byte cut lives in the shipped helper advisory_truncate.py (installed to .caws/hooks alongside classify_command.py) because bash cannot express a byte-exact UTF-8 cut: substring expansion indexes characters and printf %b escapes re-interpret. The composer validates the result (bounded, non-empty, byte-prefix, valid UTF-8 via iconv) and omits the card with a diagnostic on any failure, so no failure mode emits a split character or a marker-only card. Seven adversarial headless review passes drove these fixes; the final pass marked all reported items fixed. NOT DEPLOYED: projects pick this up on their next caws init / adapters install. Slice 2b (per-session dedup ledger with authority-change invalidation) remains designed but unbuilt; the harvest measured 3,933 redundant injections and a 1,069x-repeated advisory.'
 created_at: '2026-09-10T23:30:00.000Z'
-updated_at: '2026-09-11T01:11:03.129Z'
+updated_at: '2026-09-11T02:19:40.659Z'
 blast_radius:
   modules:
     - 'caws-cli shared hook pack (handler dispatch loop, advisory composition)'
