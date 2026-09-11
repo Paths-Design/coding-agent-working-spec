@@ -56,3 +56,7 @@ evidence:
     status: pass
     evidence_ref: "grep over the shipped dsh artifacts: doctrine + manifest comment + rendered activation guidance all name dsh.bundle.patch and the bundle's own patch as the plugin-id layer; none names the profile patch as the insert source. npx jest tests/init => 219/219 (12 suites)."
     recorded_at: "2026-09-11T00:46:38.869Z"
+  - criterion_id: A2
+    status: pass
+    evidence_ref: "npx jest tests/init/init-hook-pack-render.test.js: A8 arms 'names the bundle patch layer, not the profile patch' and 'manifest comment carries the same composition rule' pass. Controls: the retracted-rule matcher returns true on the exact retracted sentence 'profile's cordis.patch.yml, which inserts the plugin ids' and false on the shipped text."
+    recorded_at: "2026-09-11T00:46:39.774Z"
