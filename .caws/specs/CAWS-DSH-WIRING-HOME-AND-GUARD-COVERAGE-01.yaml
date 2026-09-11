@@ -51,3 +51,8 @@ acceptance:
     then: 'every implemented surface is covered, and removing a surface from the covered set fails an explicit lockstep assertion'
 non_functional: {}
 contracts: []
+evidence:
+  - criterion_id: A1
+    status: pass
+    evidence_ref: "grep over the shipped dsh artifacts: doctrine + manifest comment + rendered activation guidance all name dsh.bundle.patch and the bundle's own patch as the plugin-id layer; none names the profile patch as the insert source. npx jest tests/init => 219/219 (12 suites)."
+    recorded_at: "2026-09-11T00:46:38.869Z"
