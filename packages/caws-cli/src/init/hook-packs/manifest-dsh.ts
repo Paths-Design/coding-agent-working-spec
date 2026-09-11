@@ -8,8 +8,12 @@
 // `caws-dsh-bundle`), which composes three plugins — caws-hooks (policy
 // dispatch), caws-session-log (turn-log fold), and caws-agents-lifecycle
 // (CLI-mediated leases) — and is loaded from the DSH profile's bundle list.
-// It is NOT a repo-local auto-discovered file like opencode's
-// `.opencode/plugins/*.ts`, and it is NOT wired by a settings key.
+// A profile composes each bundle's OWN patch (declared as dsh.bundle.patch in
+// that bundle's package.json) before its own cordis.patch.yml, so the CAWS
+// plugin ids arrive from the bundle's patch; the profile's own patch is an
+// additional layer and is empty on a stock profile. It is NOT a repo-local
+// auto-discovered file like opencode's `.opencode/plugins/*.ts`, and it is NOT
+// wired by a settings key.
 //
 // So this vendor pack installs only the surface doctrine (`.dsh/AGENTS.md`).
 // The interposition plugin is loaded from the profile; the shared bash
@@ -28,13 +32,13 @@
 // Activation: DSH loads plugins at profile start. Installing the pack
 // mid-session does NOT activate the plugin until the profile is reloaded —
 // hence activation: 'restart_required'. Whether a given machine is wired is a
-// property of the live profile (its bundle list + cordis patch), never of a
-// settings key.
+// property of the live profile (its bundle list plus each bundle's patch),
+// never of a settings key.
 
 import type { HookPackV1 } from './types';
 import { SURFACE_HOOK_MECHANISMS } from './surfaces.generated';
 
-export const DSH_PACK_VERSION = 2;
+export const DSH_PACK_VERSION = 3;
 
 export const DSH_PACK: HookPackV1 = {
   id: 'dsh',

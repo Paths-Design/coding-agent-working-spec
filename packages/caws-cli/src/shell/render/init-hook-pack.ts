@@ -574,12 +574,13 @@ export function renderActivationContract(
         if (changed) {
           lines.push('  Hook files were installed or updated. DSH interposes with a');
           lines.push(`  harness-loaded plugin (${dshMechanism}), not a repo-local file or a`);
-          lines.push('  settings key. Put the CAWS bundle in the profile bundle list and');
-          lines.push('  restart the profile so it loads.');
+          lines.push('  settings key. Put the CAWS bundle in the profile bundle list —');
+          lines.push('  the bundle carries its own patch layer — then restart the');
+          lines.push('  profile so it loads.');
         } else {
           lines.push('  The DSH surface doctrine is installed. The plugin is active once');
           lines.push('  the profile bundle list loads it and the profile is reloaded —');
-          lines.push('  read the live profile rather than assuming either way.');
+          lines.push('  read the composed profile rather than assuming either way.');
         }
         break;
       }
