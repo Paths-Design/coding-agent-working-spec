@@ -2,9 +2,10 @@ id: CAWS-DSH-ADAPTER-RUNTIME-DESCRIPTION-01
 title: 'DSH adapter runtime description: derive the hook mechanism from the surface registry, not a retired shim pin'
 risk_tier: 3
 mode: fix
-lifecycle_state: draft
+lifecycle_state: active
+worktree: wt-dsh-adapter-description
 created_at: '2026-09-11T00:15:34.584Z'
-updated_at: '2026-09-11T00:15:58.657Z'
+updated_at: '2026-09-11T00:17:02.797Z'
 created_by_session: 'session-9bb5787d-bf49-4a1f-9627-8439fec62a00'
 blast_radius:
   modules:
