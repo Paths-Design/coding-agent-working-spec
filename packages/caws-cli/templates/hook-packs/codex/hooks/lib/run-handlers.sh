@@ -115,6 +115,51 @@ _rh_record_offer() {
   ' "$offer_file" >> "$CAWS_HOOK_SETTLEMENT_FILE" 2>/dev/null || true
 }
 
+
+# ---------------------------------------------------------------------------
+# _rh_truncate_complete_utf8 <text> <max-bytes>
+# Print the longest prefix of <text> that is at most <max-bytes> bytes AND ends
+# on a character boundary.
+#
+# WHY THIS EXISTS (CAWS-HOOK-ADVISORY-BUDGET-TIERS-01). `head -c` can stop after
+# a UTF-8 LEAD byte whose continuation bytes were cut. Such a trailing lead byte
+# is an incomplete character and the harness renders it as U+FFFD. A walk-back
+# that inspects the last byte of the CUT string cannot tell a complete
+# multi-byte character from an orphaned lead byte: both end in a byte >= 0x80.
+# The decidable question is asked at the END of the SOURCE instead. Scan the
+# source's character boundaries; the final character spans [start, total). If
+# that span does not fit inside max-bytes, keeping `start` bytes drops the whole
+# trailing character.
+#
+# Pure byte arithmetic in the C locale, no external process per character. Any
+# unexpected shape falls back to a plain cut so this can never fail a dispatch.
+# ---------------------------------------------------------------------------
+_rh_truncate_complete_utf8() {
+  local max_bytes="$1"
+  [[ "$max_bytes" =~ ^[0-9]+$ ]] || { cat; return 0; }
+  CAWS_TRUNCATE_MAX_BYTES="$max_bytes" python3 -c '
+import os
+import sys
+
+limit_text = os.environ.get("CAWS_TRUNCATE_MAX_BYTES", "")
+try:
+    limit = int(limit_text)
+except ValueError:
+    sys.stdout.buffer.write(sys.stdin.buffer.read())
+    raise SystemExit(0)
+
+data = sys.stdin.buffer.read()
+if limit < 0 or len(data) <= limit:
+    sys.stdout.buffer.write(data)
+    raise SystemExit(0)
+
+# Decode the largest byte prefix that ends on a character boundary. `errors`
+# ignore drops only the incomplete trailing sequence introduced by the cut.
+sys.stdout.buffer.write(data[:limit].decode("utf-8", "ignore").encode("utf-8"))
+'
+  return 0
+}
+
 # ---------------------------------------------------------------------------
 # run_handlers [--short-circuit-on-block] <handler-entry>...
 # ---------------------------------------------------------------------------
@@ -373,20 +418,8 @@ run_handlers() {
             # `_rh_byte_count` by construction. It can stop mid-character, so walk
             # back off any UTF-8 continuation byte to keep the emitted text valid,
             # then report the bytes ACTUALLY kept rather than the bytes requested.
-            local truncated_card elided marker actual_kept last_byte
-            truncated_card="$(printf '%s' "$additional_context" | head -c "$keep_bytes")"
-            while [[ -n "$truncated_card" ]]; do
-              # `${s: -1}` is one CHARACTER: take the FIRST byte of its octal
-              # dump (the lead byte), never a whitespace-stripped concatenation
-              # of every byte, which would compare as a huge number.
-              # `od -An` right-aligns values AND wraps to several lines, so both
-              # `$1` (empty leading field) and `$NF` (last field of every line)
-              # are wrong. Collapse all whitespace to single spaces first, then
-              # take the first field: that is the lead byte of the last character.
-              last_byte="$(printf '%s' "${truncated_card: -1}" | od -An -tu1 | tr -s ' \n' ' ' | awk '{print $1}')"              [[ -n "$last_byte" ]] || break
-              (( last_byte >= 128 )) || break
-              truncated_card="${truncated_card%?}"
-            done
+            local truncated_card elided marker actual_kept
+            truncated_card="$(printf '%s' "$additional_context" | _rh_truncate_complete_utf8 "$keep_bytes")"
             actual_kept=$(_rh_byte_count "$truncated_card")
             elided=$(( card_bytes - actual_kept ))
             marker="… [truncated: ${elided} bytes elided]"

@@ -142,6 +142,59 @@ EOF
   assert_line 'replacement_char=0'
 }
 
+@test "advisory budget: the byte cut is character-aligned and reconstructs the card" {
+  # Regression guard for two coupled defects an adversarial review found in the
+  # first byte-cut revision: (1) the walk-back statement had been joined onto
+  # the assignment line, so it became an env prefix to a missing command and
+  # never ran, emitting a split character; (2) the walk-back predicate stripped
+  # COMPLETE characters rather than only continuation bytes, yielding a
+  # marker-only card. These checks fail if either returns: a replacement
+  # character means the walk-back did not run, and a body that is not a byte
+  # prefix of the source means the cut split a character.
+  local fake_hooks
+  fake_hooks="$(mktemp -d "${TMPDIR:-/tmp}/caws-bats-rh-align-XXXXXX")"
+  cat > "$fake_hooks/utf8.sh" <<'EOF'
+#!/usr/bin/env bash
+cat >/dev/null
+python3 -c 'import json; print(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":chr(0x1F600)*400}}))'
+EOF
+  chmod +x "$fake_hooks/utf8.sh"
+
+  # 605 lands the requested keep on a 4-byte boundary; 607 and 609 land one and
+  # three bytes past it, which is exactly what must exercise the walk-back.
+  local budget
+  for budget in 605 607 609; do
+    run env -i PATH="$PATH" LC_ALL=en_US.UTF-8 CAWS_HOOK_ADVISORY_BUDGET_BYTES="$budget" bash -c "
+      source '$CAWS_TEST_HOOKS_DIR/lib/run-handlers.sh'
+      export HOOKS_DIR='$fake_hooks' HOOK_INPUT_JSON='{}'
+      out=\"\$(run_handlers utf8.sh)\"
+      ctx=\"\$(printf '%s' \"\$out\" | jq -r '.hookSpecificOutput.additionalContext // empty')\"
+      printf 'ctx=%s\n' \"\$(printf '%s' \"\$ctx\" | base64)\"
+    " 2>/dev/null
+    local b64 ctx
+    b64="$(printf '%s' "$output" | sed -n 's/^ctx=//p')"
+    [[ -n "$b64" ]] || fail "budget $budget: no context captured"
+    ctx="$(printf '%s' "$b64" | base64 -d)"
+    python3 - "$budget" "$ctx" <<'PY' || fail "budget $budget: alignment/reconstruction check failed"
+import sys
+budget = int(sys.argv[1])
+ctx = sys.argv[2]
+orig = "\U0001F600" * 400
+emitted = len(ctx.encode("utf-8"))
+assert emitted <= budget, f"emitted {emitted} exceeds budget {budget}"
+assert "\ufffd" not in ctx, "replacement character present (walk-back did not run)"
+assert "[truncated:" in ctx, "no truncation marker"
+body = ctx[: ctx.rindex("\u2026")]
+assert body, "marker-only card: no content kept"
+assert orig.encode("utf-8").startswith(body.encode("utf-8")), (
+    "kept body is not a byte prefix of the card: the cut split a character"
+)
+print(f"budget {budget}: emitted={emitted} body_bytes={len(body.encode())} aligned")
+PY
+  done
+  rm -rf "$fake_hooks"
+}
+
 @test "advisory budget: a declined card reports its OWN size, not a cumulative total" {
   # 900 + 900 against 1000: card 1 fits, card 2 cannot fit meaningfully.
   BUDGET=1000 compose 900 900
