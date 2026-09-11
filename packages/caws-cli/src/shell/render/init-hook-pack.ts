@@ -15,6 +15,7 @@ import {
   type SettingsWiringStatus,
 } from '../../init/hook-install';
 import { IMPLEMENTED_SURFACES } from '../../init/hook-packs/register';
+import { SURFACE_HOOK_MECHANISMS } from '../../init/hook-packs/surfaces.generated';
 import type { HookPackInstallResult } from '../../init/hook-packs/types';
 
 function repeatChar(ch: string, n: number): string {
@@ -569,14 +570,16 @@ export function renderActivationContract(
         break;
       }
       if (isDsh) {
+        const dshMechanism = SURFACE_HOOK_MECHANISMS.dsh;
         if (changed) {
-          lines.push('  Hook files were installed or updated. The DSH shim ships in the');
-          lines.push('  harness package tree — add @deepseek-ai/dsh-hooks-caws to the');
-          lines.push('  profile bundles, then restart the profile so the shim loads.');
+          lines.push('  Hook files were installed or updated. DSH interposes with a');
+          lines.push(`  harness-loaded plugin (${dshMechanism}), not a repo-local file or a`);
+          lines.push('  settings key. Put the CAWS bundle in the profile bundle list and');
+          lines.push('  restart the profile so it loads.');
         } else {
-          lines.push('  The DSH surface doctrine is installed. The shim is active once');
-          lines.push('  @deepseek-ai/dsh-hooks-caws is in the profile bundles and the');
-          lines.push('  profile is restarted.');
+          lines.push('  The DSH surface doctrine is installed. The plugin is active once');
+          lines.push('  the profile bundle list loads it and the profile is reloaded —');
+          lines.push('  read the live profile rather than assuming either way.');
         }
         break;
       }

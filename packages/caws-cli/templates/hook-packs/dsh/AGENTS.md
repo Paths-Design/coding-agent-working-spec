@@ -1,7 +1,7 @@
 <!--
 # CAWS-MANAGED-HOOK
 # hook_pack: dsh
-# hook_pack_version: 1
+# hook_pack_version: 2
 # caws_min_major: 11
 # lineage_refs: 1,4,6,8,11,12,13,16,17,19,22,23,24,25,26,27,28,29,30,31
 # edit_stance: YOURS TO EDIT. This is a starting hook, not a locked one — shape it
@@ -24,11 +24,19 @@ shared core, installed at `.caws/hooks/` in the consumer repo.
 DSH differs from the claude-code/codex/opencode adapters in **where the shim
 lives**. claude-code and codex fire hooks by invoking an external bash command
 named in a config file; opencode interposes via a repo-local, auto-discovered TS
-plugin. DSH's lifecycle interposition is an **in-process Cordis plugin surface**,
-and the shim — `@deepseek-ai/dsh-hooks-caws` — ships in the **DSH harness
-package tree** and is loaded from the **DSH profile**, not from a repo-local
-file. So this pack installs no shim: it installs the shared core (via the
-`shared` pack) plus this doctrine file.
+plugin. DSH's interposition is a **harness-loaded plugin** (`hookMechanism:
+harness-plugin` for `dsh` in `packages/caws-cli/surfaces/registry.json`, the
+single source of truth for per-surface facts), loaded from the **DSH profile's
+bundle list** — not from a repo-local file and not from a settings key. So this
+pack installs no shim: it installs the shared core (via the `shared` pack) plus
+this doctrine file.
+
+The CAWS reference adapter is the `@caws/dsh-bundle` bundle (repo
+`caws-dsh-bundle`), which composes three plugins: `caws-hooks` (policy
+dispatch), `caws-session-log` (turn-log fold), and `caws-agents-lifecycle`
+(CLI-mediated leases). Read that name as the reference bundle, never as the
+wiring test — the authoritative question is what the live profile loads, which
+the check under [Activation](#activation) answers.
 
 ## Layout
 
@@ -42,12 +50,12 @@ file. So this pack installs no shim: it installs the shared core (via the
   AGENTS.md             # this file
 ```
 
-The shim (`@deepseek-ai/dsh-hooks-caws`) contains **zero CAWS guard logic**. It
-is a translator: it maps DSH's interception points onto the shared bash
-dispatchers and converts a dispatcher block decision into DSH's typed tool
-decisions. Every guard runs from the shared core unchanged.
+The plugin contains **zero CAWS guard logic**. It is a translator: it maps
+DSH's interception points onto the shared bash dispatchers and converts a
+dispatcher block decision into DSH's typed tool decisions. Every guard runs from
+the shared core unchanged.
 
-## How the shim works
+## How the plugin works
 
 | DSH interception point        | Routes to                               | Effect |
 | ----------------------------- | --------------------------------------- | ------ |
@@ -57,10 +65,10 @@ decisions. Every guard runs from the shared core unchanged.
 | `agent/turn-stopping`         | `.caws/hooks/dispatch/stop.sh`          | Session log finalize / lease stop; a blocking stop-worktree check steers another step. |
 
 Tool-name normalization: DSH uses lowercase tool names (`bash`/`write`/`edit`/
-`read`/`grep`/`glob`); the shim maps these to the CAWS dispatcher vocabulary
+`read`/`grep`/`glob`); the plugin maps these to the CAWS dispatcher vocabulary
 (`Bash`/`Write`/`Edit`, …) that the shared guards were written against.
 
-Path resolution: the shim resolves the repo root at **runtime** by walking up
+Path resolution: the plugin resolves the repo root at **runtime** by walking up
 from the session cwd to the nearest `.caws/`, then sets `CAWS_AGENT_SURFACE=dsh`
 and `CAWS_PROJECT_DIR=<root>` on every dispatcher invocation. There is no
 install-time token substitution.
@@ -75,20 +83,38 @@ degrades to a normalized denial), not a silent allow.
 ## Fail posture
 
 If `.caws/hooks/dispatch/` is absent (CAWS not installed for this repo), the
-shim no-ops — it allows every tool rather than blocking all work over a missing
-install. Run `caws init --agent-surface dsh` to install the shared core. Once
-the dispatchers exist, their own posture takes over: transient payload errors
-fail open (exit 0), a missing core lib fails loud-and-safe (exit 2 → block).
+plugin no-ops — it allows every tool rather than blocking all work over a
+missing install. Run `caws init --agent-surface dsh` to install the shared core.
+Once the dispatchers exist, their own posture takes over: transient payload
+errors fail open (exit 0), a missing core lib fails loud-and-safe (exit 2 →
+block).
 
 ## Activation
 
-DSH loads plugins at **profile start**. Installing the pack mid-session does NOT
-activate the shim until the profile is restarted. The shim must be present in
-the profile's bundle list:
+DSH loads plugins at **profile start**. Installing this pack mid-session does NOT
+activate the plugin until the profile is reloaded. Activation is a property of
+the profile, and the profile is where to check it — a settings key is not part
+of this surface's wiring, so `~/.dsh/settings.yaml` says nothing either way
+about whether the guard chain is live.
+
+Read the live profile:
 
 ```sh
-dsh plugin --profile <name> add @deepseek-ai/dsh-hooks-caws
-# or add "@deepseek-ai/dsh-hooks-caws" to the profile's dsh.profile.bundles
+# the bundles the profile composes (`dsh.profile.bundles` in its package.json)
+python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['dsh']['profile']['bundles'])" \
+  ~/.dsh/profiles/<name>/package.json
+# the plugins those bundles insert
+cat ~/.dsh/profiles/<name>/cordis.patch.yml
+```
+
+The CAWS planes are active when the patch inserts the three plugin ids
+`caws-hooks`, `caws-session-log`, and `caws-agents-lifecycle`, and a session in a
+`.caws/` repo sees live guard output (a `CAWS hook context` injection on a
+governed tool call, or a guard refusal). Add the reference adapter to a profile
+with:
+
+```sh
+dsh plugin --profile <name> add @caws/dsh-bundle
 ```
 
 Then restart the profile. After `caws init --agent-surface dsh`, the shared core

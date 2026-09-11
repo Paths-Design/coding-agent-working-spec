@@ -40,7 +40,9 @@ const { CLAUDE_CODE_PACK } = require('../../dist/init/hook-packs/manifest-claude
 const { OPENCODE_PACK } = require('../../dist/init/hook-packs/manifest-opencode');
 const { CODEX_PACK } = require('../../dist/init/hook-packs/manifest-codex');
 const { IMPLEMENTED_SURFACES } = require('../../dist/init/hook-packs/register');
-const { renderHookPackInstall } = require('../../dist/shell/render/init-hook-pack');
+const { DSH_PACK, DSH_PACK_VERSION } = require('../../dist/init/hook-packs/manifest-dsh');
+const { SURFACE_HOOK_MECHANISMS } = require('../../dist/init/hook-packs/surfaces.generated');
+const { renderHookPackInstall, renderActivationContract } = require('../../dist/shell/render/init-hook-pack');
 
 const EXCLUDED_DIRS = new Set(['tmp', '.caws', '__pycache__', 'node_modules']);
 const EXCLUDED_FILES = new Set(['.DS_Store']);
@@ -684,5 +686,137 @@ describe('A7: skip panels derive their surface list from IMPLEMENTED_SURFACES', 
       expect(out).toContain(surface);
     }
     expect(out).toContain('dsh');
+  });
+});
+
+/**
+ * A8 — DSH runtime-description currency
+ * (CAWS-DSH-ADAPTER-RUNTIME-DESCRIPTION-01).
+ *
+ * The DSH doctrine, the dsh manifest, and the dsh install guidance pinned the
+ * interposition shim to `@deepseek-ai/dsh-hooks-caws`, a package in the DSH
+ * harness tree. The deployed integration is the profile-loaded
+ * `@caws/dsh-bundle`, so the shipped description named an adapter that is not
+ * the one running — the same "hardcoded per-surface fact goes stale" defect A7
+ * closes for the skip-panel surface list. These arms assert the description
+ * derives its mechanism from the surface registry and carries no retired pin.
+ *
+ * The registry (`packages/caws-cli/surfaces/registry.json`) is the single source
+ * of per-surface facts; `SURFACE_HOOK_MECHANISMS` is its generated projection.
+ * Asserting against the projection rather than a literal is what makes a future
+ * mechanism change fail here instead of rotting in prose.
+ */
+describe('A8: the DSH description derives its mechanism from the surface registry', () => {
+  const RETIRED_PIN = '@deepseek-ai/dsh-hooks-caws';
+  const REFERENCE_BUNDLE = '@caws/dsh-bundle';
+  const DSH_DOCTRINE = path.join(PACKS_ROOT, 'dsh', 'AGENTS.md');
+  const MANIFEST_SOURCE = path.join(
+    CLI_PKG_ROOT,
+    'src',
+    'init',
+    'hook-packs',
+    'manifest-dsh.ts'
+  );
+  const REGISTRY = path.join(CLI_PKG_ROOT, 'surfaces', 'registry.json');
+
+  // Drive the SHIPPED manifest, not a hand-built stub: the summary is part of
+  // the description under test. The activation guidance is a separate renderer
+  // (renderActivationContract), so both panels are scanned.
+  const PACK_RESULT = {
+    pack: DSH_PACK,
+    outcome: 'installed',
+    activation: 'restart_required',
+    actions: [{ destPath: '.dsh/AGENTS.md', action: 'created' }],
+  };
+
+  function renderDshInstall() {
+    return renderHookPackInstall(PACK_RESULT);
+  }
+
+  function renderDshActivation() {
+    return renderActivationContract(PACK_RESULT);
+  }
+
+  test('non-vacuity anchor: the registry mechanism for dsh is harness-plugin', () => {
+    // If this ever changes, every assertion below is asserting the wrong fact —
+    // fail here first rather than passing against a stale expectation.
+    expect(SURFACE_HOOK_MECHANISMS.dsh).toBe('harness-plugin');
+  });
+
+  test('the generated projection still matches its registry source', () => {
+    const registry = JSON.parse(fs.readFileSync(REGISTRY, 'utf8'));
+    expect(SURFACE_HOOK_MECHANISMS.dsh).toBe(registry.surfaces.dsh.hookMechanism);
+  });
+
+  test('no shipped DSH artifact names the retired shim package', () => {
+    const artifacts = {
+      'templates/hook-packs/dsh/AGENTS.md': fs.readFileSync(DSH_DOCTRINE, 'utf8'),
+      'src/init/hook-packs/manifest-dsh.ts': fs.readFileSync(MANIFEST_SOURCE, 'utf8'),
+      'manifest summary': DSH_PACK.summary,
+      'rendered dsh install panel': renderDshInstall(),
+      'rendered dsh activation guidance': renderDshActivation(),
+    };
+    const offenders = Object.entries(artifacts)
+      .filter(([, body]) => body.includes(RETIRED_PIN))
+      .map(([name]) => name);
+    expect(offenders).toEqual([]);
+    // Positive control: the scan is looking at real content, so an empty
+    // offender list is a finding and not an artifact of an empty haystack.
+    expect(artifacts['templates/hook-packs/dsh/AGENTS.md']).toContain(REFERENCE_BUNDLE);
+  });
+
+  test('the doctrine states the registry mechanism and names the reference adapter, not as the wiring test', () => {
+    const doctrine = fs.readFileSync(DSH_DOCTRINE, 'utf8');
+    expect(doctrine).toContain(SURFACE_HOOK_MECHANISMS.dsh);
+    expect(doctrine).toContain(REFERENCE_BUNDLE);
+    // The doctrine must scope the bundle name to "reference", because naming a
+    // package is what went stale the first time.
+    expect(doctrine).toMatch(/reference adapter/i);
+  });
+
+  test('the doctrine sends the reader to the live profile for wiring, never to a settings key', () => {
+    const doctrine = fs.readFileSync(DSH_DOCTRINE, 'utf8');
+    // The two facts that make the check runnable on any machine.
+    expect(doctrine).toContain('dsh.profile.bundles');
+    expect(doctrine).toContain('cordis.patch.yml');
+    // The retired claim shape: inferring "not wired" from the absence of a
+    // settings hooks key. That inference is unfalsifiable on this surface and
+    // must not return.
+    expect(doctrine).not.toMatch(/settings\.yaml[^.]*declares no hooks key/i);
+    expect(doctrine).not.toMatch(/no wiring invokes the dispatchers/i);
+  });
+
+  test('the manifest summary derives its mechanism from the registry', () => {
+    // The summary is printed by the install panel, so a literal here would ship
+    // the same stale-fact risk the doctrine carried.
+    expect(DSH_PACK.summary).toContain(SURFACE_HOOK_MECHANISMS.dsh);
+  });
+
+  test('the rendered dsh activation guidance names the mechanism and points at the profile', () => {
+    const out = renderDshActivation();
+    expect(out).toContain(SURFACE_HOOK_MECHANISMS.dsh);
+    expect(out).toMatch(/profile/i);
+    expect(out).not.toContain(RETIRED_PIN);
+  });
+
+  test('a real install stamps the doctrine at the bumped pack version and still parses as managed', () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'caws-dsh-doctrine-'));
+    try {
+      const r = installHookPack(DSH_PACK, { repoRoot });
+      const installed = path.join(repoRoot, '.dsh', 'AGENTS.md');
+      expect(r.actions.find((a) => a.destPath === '.dsh/AGENTS.md').action).toBe('created');
+      const content = fs.readFileSync(installed, 'utf8');
+      const header = parseManagedHeader(content);
+      expect(header).not.toBeNull();
+      expect(header.hookPack).toBe('dsh');
+      // The stamp lifts the frozen template literal to the manifest version, so
+      // a doctrine change without a version bump is visible as a stale stamp.
+      expect(header.hookPackVersion).toBe(DSH_PACK_VERSION);
+      expect(DSH_PACK.packVersion).toBe(DSH_PACK_VERSION);
+      expect(content).toContain(SURFACE_HOOK_MECHANISMS.dsh);
+      expect(content).not.toContain(RETIRED_PIN);
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
   });
 });
