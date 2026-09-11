@@ -60,3 +60,7 @@ evidence:
     status: pass
     evidence_ref: "npx jest tests/init/init-hook-pack-render.test.js: A8 arms 'names the bundle patch layer, not the profile patch' and 'manifest comment carries the same composition rule' pass. Controls: the retracted-rule matcher returns true on the exact retracted sentence 'profile's cordis.patch.yml, which inserts the plugin ids' and false on the shipped text."
     recorded_at: "2026-09-11T00:46:39.774Z"
+  - criterion_id: A3
+    status: pass
+    evidence_ref: "npx jest tests/init/pack-fingerprint.test.js: 'dsh pack fingerprint is unchanged (or version bumped)' runs and passes (baseline version 3 == DSH_PACK_VERSION, fingerprint e2c1aafe...). Control: appending one byte to the dsh template failed exactly that case (1 failed / 13 passed); reverting restored 14/14."
+    recorded_at: "2026-09-11T00:46:40.507Z"
