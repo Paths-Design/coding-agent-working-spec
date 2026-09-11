@@ -180,83 +180,52 @@ _rh_truncate_complete_utf8() {
   local text="$1"
   local max_bytes="$2"
   [[ "$max_bytes" =~ ^[0-9]+$ ]] || { printf '%s' "$text"; return 0; }
-  [[ -n "$text" ]] || return 0
+  (( max_bytes <= 0 )) && return 0
 
-  # Byte-exact cut of a UTF-8 string. Bash cannot express this: substring
-  # expansion indexes by CHARACTER in a UTF-8 locale, and assembling octal
-  # escapes trips printf %b re-interpretation. The interpreter does the cut, but
-  # nothing about it is trusted blindly:
-  #   * availability is checked before use,
-  #   * the pipeline status is captured with PIPESTATUS,
-  #   * the emitted bytes are validated to be valid UTF-8, within max_bytes, and
-  #     a byte-prefix of the source.
-  # Any failure falls back to dropping the last character, which is always a
-  # valid boundary and can never split one. The payload travels on stdin, so no
-  # large value enters argv or the environment.
-  if ! command -v python3 >/dev/null 2>&1; then
-    printf '%s' "$text" | head -c "$max_bytes"
-    return 0
+  # Byte-exact, character-safe truncation. Bash cannot express this: substring
+  # expansion indexes by CHARACTER in a UTF-8 locale, and assembling the output
+  # from printf %b octal escapes re-interprets them. The cut therefore lives in
+  # the pack's shipped helper (advisory_truncate.py), alongside
+  # classify_command.py, which is already required on this path.
+  local total
+  total=$(LC_ALL=C printf '%s' "$text" | wc -c | tr -d ' ')
+  [[ "$total" =~ ^[0-9]+$ ]] || { printf '%s' "$text"; return 0; }
+  (( total <= max_bytes )) && { printf '%s' "$text"; return 0; }
+
+  local script out status
+  script="$(_rh_pack_python_helper advisory_truncate.py)"
+  if [[ -n "$script" && -f "$script" && -x "$script" ]] && command -v python3 >/dev/null 2>&1; then
+    out="$(printf '%s' "$text" | python3 "$script" "$max_bytes" 2>/dev/null)"
+    status=$?
+    if (( status == 0 )); then
+      local out_bytes
+      out_bytes=$(LC_ALL=C printf '%s' "$out" | wc -c | tr -d ' ')
+      # Validate the result rather than trusting it: bounded, and a byte prefix
+      # of the source. A malformed response must not corrupt an advisory.
+      if [[ "$out_bytes" =~ ^[0-9]+$ ]] && (( out_bytes > 0 && out_bytes <= max_bytes )) \
+         && printf '%s' "$text" | head -c "$out_bytes" | cmp -s - <(printf '%s' "$out"); then
+        printf '%s' "$out"
+        return 0
+      fi
+    fi
   fi
 
-  # `local out="$(pipeline)"` would mask the pipeline's exit status (the `local`
-  # builtin's own status wins), which silently discarded a verified result and
-  # fell back to a byte cut that can split a character. Declare and assign
-  # separately so PIPESTATUS reflects the Python process.
-  local out
-  out="$(printf '%s' "$text" | CAWS_TRUNCATE_MAX_BYTES="$max_bytes" python3 -c '
-import os
-import sys
-
-try:
-    limit = int(os.environ["CAWS_TRUNCATE_MAX_BYTES"])
-except (KeyError, ValueError):
-    sys.exit(3)
-
-data = sys.stdin.buffer.read()
-if limit < 0:
-    sys.exit(3)
-if len(data) <= limit:
-    sys.stdout.buffer.write(data)
-    raise SystemExit(0)
-
-# Largest byte prefix that ends on a character boundary.
-sys.stdout.buffer.write(data[:limit].decode("utf-8", "ignore").encode("utf-8"))
-')"
-  # `$?` is the pipeline's status, which is the LAST element's -- the Python
-  # process. PIPESTATUS does not survive the command substitution here.
-  local status=$?
-  if [[ "$status" != "0" ]]; then
-    printf '%s' "$text" | head -c "$max_bytes"
-    return 0
-  fi
-
-  local out_bytes
-  out_bytes=$(LC_ALL=C printf '%s' "$out" | wc -c | tr -d ' ')
-  if [[ ! "$out_bytes" =~ ^[0-9]+$ ]] || (( out_bytes > max_bytes )); then
-    printf '%s' "$text" | head -c "$max_bytes"
-    return 0
-  fi
-  # Reject anything that is not a byte-prefix of the source (a malformed
-  # interpreter response) or that is not valid UTF-8 (a split character).
-  if ! printf '%s' "$text" | head -c "$out_bytes" | cmp -s - <(printf '%s' "$out"); then
-    printf '%s' "$text" | head -c "$max_bytes"
-    return 0
-  fi
-  local tail_ok
-  tail_ok=$(printf '%s' "$out" | python3 -c 'import sys
-try:
-    sys.stdin.buffer.read().decode("utf-8")
-    print("ok")
-except UnicodeDecodeError:
-    print("bad")')
-  if [[ "$tail_ok" != "ok" ]]; then
-    printf '%s' "$text" | head -c "$max_bytes"
-    return 0
-  fi
-  printf '%s' "$out"
+  # Fallback: omit rather than emit a possibly split character. The caller's
+  # diagnostic already reports the omission; a corrupt card would be worse.
   return 0
 }
 
+# Locate a shipped pack helper next to this library (lib/ -> pack root).
+_rh_pack_python_helper() {
+  local name="$1"
+  local here
+  here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  local candidate
+  for candidate in "${CAWS_SHARED_LIB_DIR:-}/../$name" "$here/../$name"; do
+    [[ -n "$candidate" && -f "$candidate" ]] && { printf '%s' "$candidate"; return 0; }
+  done
+  return 0
+}
 # ---------------------------------------------------------------------------
 # run_handlers [--short-circuit-on-block] <handler-entry>...
 # ---------------------------------------------------------------------------

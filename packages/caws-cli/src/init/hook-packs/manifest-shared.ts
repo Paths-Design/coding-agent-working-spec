@@ -707,6 +707,12 @@ export const SHARED_PACK: HookPackV1 = {
       executable: true,
       managed: true,
     },
+    {
+      destPath: '.caws/hooks/advisory_truncate.py',
+      sourcePath: 'advisory_truncate.py',
+      executable: true,
+      managed: true,
+    },
 
     // -- Human-authorized escape hatches --
     {
