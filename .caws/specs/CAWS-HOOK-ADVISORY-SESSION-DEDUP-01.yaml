@@ -3,6 +3,7 @@ title: 'The hook composer re-injects an identical advisory every time its handle
 risk_tier: 2
 mode: feature
 lifecycle_state: active
+worktree: wt-advisory-dedup
 created_at: '2026-09-11T01:30:00.000Z'
 updated_at: '2026-09-11T01:30:00.000Z'
 blast_radius:
