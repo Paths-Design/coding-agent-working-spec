@@ -2,10 +2,11 @@ id: DANGER-LATCH-RESET-EXEMPT-ANCHOR-001
 title: 'Reset-exemption end-anchor: the trap exit admits exactly one simple reset invocation'
 risk_tier: 1
 mode: fix
-lifecycle_state: active
-worktree: wt-reset-anchor
+lifecycle_state: closed
+resolution: completed
+closure_notes: 'Auto-closed by caws worktree merge wt-reset-anchor at 48332f87e20e6330f95d879f821ff74ba26c7604'
 created_at: '2026-09-12T19:49:28.982Z'
-updated_at: '2026-09-12T19:50:02.120Z'
+updated_at: '2026-09-12T19:51:51.936Z'
 created_by_session: 'session-c04418cd-a035-44a9-b26e-378d285ccad1'
 blast_radius:
   modules:
