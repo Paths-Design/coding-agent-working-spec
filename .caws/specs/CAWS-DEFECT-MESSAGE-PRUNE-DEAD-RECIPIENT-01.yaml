@@ -92,3 +92,7 @@ evidence:
     status: pass
     evidence_ref: "jest tests/store/messages-dead-recipient-prune.test.js 'A3' — newer-than-floor skip by default; --older-than-ms 0 overrides (floor reported as 0)"
     recorded_at: "2026-09-12T22:19:17.366Z"
+  - criterion_id: A4
+    status: pass
+    evidence_ref: "jest tests/store/messages-dead-recipient-prune.test.js 'A4' — unexpired offer reserves the message (offer-pending)"
+    recorded_at: "2026-09-12T22:19:17.880Z"
