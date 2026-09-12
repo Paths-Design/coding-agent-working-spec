@@ -68,3 +68,7 @@ evidence:
     status: pass
     evidence_ref: "bats audit-jsonl.bats (4/4) + full 262/262 bats, 138/138 pytest"
     recorded_at: "2026-09-12T20:56:31.388Z"
+  - criterion_id: A4
+    status: pass
+    evidence_ref: "bats audit-jsonl.bats (4/4) + full 262/262 bats, 138/138 pytest"
+    recorded_at: "2026-09-12T20:56:31.853Z"
