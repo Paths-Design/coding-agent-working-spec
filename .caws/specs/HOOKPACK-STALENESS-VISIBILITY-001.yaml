@@ -64,8 +64,8 @@ evidence:
     recorded_at: "2026-09-12T21:35:20.785Z"
   - criterion_id: A2
     status: pass
-    evidence_ref: "bats agent-register-quarantine.bats 'pack drift: no advisory when every installed stock file matches the runtime (A2)' — fixture publishes every entry with its real sha256; red under the admit-all mutation"
-    recorded_at: "2026-09-12T21:20:55.344Z"
+    evidence_ref: "bats agent-register-quarantine.bats 'pack drift: a clean install of the pinned runtime reports NO drift (A2)' — fixture builds a REAL runtime with the user-facing installer; red (51/51 files) under the shipped raw-hash comparison"
+    recorded_at: "2026-09-12T21:35:21.759Z"
   - criterion_id: A3
     status: pass
     evidence_ref: "bats agent-register-quarantine.bats 'pack drift: no advisory and exit 0 with no readable runtime pointer (A3)' — red under a fire-on-missing-pointer mutation"
