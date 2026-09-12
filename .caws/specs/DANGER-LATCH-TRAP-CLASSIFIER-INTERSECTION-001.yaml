@@ -61,3 +61,7 @@ evidence:
     status: pass
     evidence_ref: "bats INTERSECT A1 (credential reads denied, reason names classifier refusal)"
     recorded_at: "2026-09-12T20:33:00.934Z"
+  - criterion_id: A2
+    status: pass
+    evidence_ref: bats INTERSECT A2 (bare git = ask-class denies while trapped)
+    recorded_at: "2026-09-12T20:33:02.274Z"
