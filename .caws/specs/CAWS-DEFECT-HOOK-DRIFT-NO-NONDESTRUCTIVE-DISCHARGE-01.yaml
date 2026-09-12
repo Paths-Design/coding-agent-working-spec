@@ -108,3 +108,7 @@ evidence:
     status: pass
     evidence_ref: "jest tests/init/init-hook-pack-render.test.js A6 describe — no-pack panels state the no-op, pre-existing installs stand, --adopt scope named; 'NOT in effect' absent"
     recorded_at: "2026-09-12T23:38:44.520Z"
+  - criterion_id: A7
+    status: pass
+    evidence_ref: "live run on ../sterling with the lane build: pack_local_growth INFO names exactly the 8 verified-growth paths (bash-write-guard, classify_command, pre_tool_use, session_start, session_log_renderer, session-log, worktree-guard, worktree-write-guard); pack_body_drift WARN names the 9 baseline-clean paths with the ambiguity caveat; version lag stays WARN — and the post_tool_use.sh three-way diff (installed==baseline, both carrying the REPO-LOCAL banner the template lacks) is the recorded falsification that forced the ambiguity semantics"
+    recorded_at: "2026-09-12T23:38:45.039Z"
