@@ -69,3 +69,7 @@ evidence:
     status: pass
     evidence_ref: "bats agent-register-quarantine.bats 'pack drift: no advisory and exit 0 with no readable runtime pointer (A3)' — red under a fire-on-missing-pointer mutation"
     recorded_at: "2026-09-12T21:20:57.146Z"
+  - criterion_id: A4
+    status: pass
+    evidence_ref: "bats agent-register-quarantine.bats 'pack drift: CAWS_PACK_STALENESS_CHECK=0 silences a real drift (A4)' — red under a mutation that ignored the disable gate"
+    recorded_at: "2026-09-12T21:20:58.982Z"
