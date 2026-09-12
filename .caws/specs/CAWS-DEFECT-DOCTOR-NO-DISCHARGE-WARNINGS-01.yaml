@@ -109,3 +109,7 @@ evidence:
     status: pass
     evidence_ref: "jest tests/kernel/unit/doctor-half-state.test.ts 'A7: the downgrade path mutates nothing on a deeply-frozen input'"
     recorded_at: "2026-09-12T22:07:06.869Z"
+  - criterion_id: A8
+    status: pass
+    evidence_ref: "jest tests/store/doctor-snapshot-tombstone.test.js 'A8' (real repo + chained appendEvent; localBranchRefs/createdWorktreePathExistsByName composed; inspectProjectState downgrades wt-ghost, keeps wt-alive warning) + live repro: patched dist run against ../sterling downgraded all four recorded orphans (seq 9800/10975/25232/40142) to INFO"
+    recorded_at: "2026-09-12T22:07:07.403Z"
