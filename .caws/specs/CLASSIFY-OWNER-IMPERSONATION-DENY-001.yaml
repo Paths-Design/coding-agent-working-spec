@@ -2,10 +2,11 @@ id: CLASSIFY-OWNER-IMPERSONATION-DENY-001
 title: 'Owner-identity impersonation in an authorization field is denied'
 risk_tier: 1
 mode: fix
-lifecycle_state: active
-worktree: wt-impersonation
+lifecycle_state: closed
+resolution: completed
+closure_notes: 'Auto-closed by caws worktree merge wt-impersonation at ec19a754d67461a135fb149c59c02156004c25fe'
 created_at: '2026-09-12T20:43:58.876Z'
-updated_at: '2026-09-12T20:44:26.091Z'
+updated_at: '2026-09-12T20:50:12.769Z'
 created_by_session: 'session-c04418cd-a035-44a9-b26e-378d285ccad1'
 blast_radius:
   modules:
