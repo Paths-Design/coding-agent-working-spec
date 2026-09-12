@@ -100,3 +100,8 @@ contracts:
     type: 'contract-test'
     path: 'packages/caws-cli/tests/hooks/bats/reset-danger-latch.bats'
     description: 'Human reset clears the trap sentinel and strike state; zero-searched-dirs and env-stripped snapshot invocations exit non-zero with the corrected command instead of success-by-absence.'
+evidence:
+  - criterion_id: A1
+    status: pass
+    evidence_ref: "bats tests/hooks/bats/block-dangerous.bats (trap suite, 29/29 green)"
+    recorded_at: "2026-09-12T18:57:06.687Z"
