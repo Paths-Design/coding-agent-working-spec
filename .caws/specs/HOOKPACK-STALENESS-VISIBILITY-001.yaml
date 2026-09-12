@@ -8,20 +8,39 @@ updated_at: '2026-09-12T21:05:29.273Z'
 created_by_session: 'session-c04418cd-a035-44a9-b26e-378d285ccad1'
 blast_radius:
   modules:
-    - 'TODO: list one or more modules this spec touches.'
+    - 'packages/caws-cli/templates/hook-packs/shared/agent-register.sh (SessionStart advisory)'
+    - 'packages/caws-cli/tests/hooks/bats/agent-register-quarantine.bats'
   data_migration: false
-operational_rollback_slo: 5m
 scope:
   in:
-    - 'TODO: list the file(s) or directories this spec authorizes.'
-  out: []
+    - packages/caws-cli/templates/hook-packs/shared/agent-register.sh
+    - packages/caws-cli/tests/hooks/bats/agent-register-quarantine.bats
+  out:
+    - packages/caws-cli/src
+    - packages/caws-cli/dist
 invariants:
-  - 'TODO: describe one invariant this spec guarantees.'
+  - 'A project-local stock handler shadows the machine snapshot, so a runtime fix never reaches a repo carrying its own copy until someone ports it — silently. SessionStart compares the installed stock files against the pinned runtime manifest and reports the differing ones.'
+  - 'The advisory distinguishes "differs" from "stale": a customized project file is legitimate and is REPORTED, never overwritten, reverted, or refused; the message routes to the review surface (caws init --plan / init diff) and the sanctioned port (caws init port).'
+  - 'Read-only and fail-open: the check reads the runtime pointer, the runtime manifest and the installed files, emits at most one bounded context line, and emits nothing (never blocks) when the pointer, manifest, node, or any file is unavailable.'
+  - 'Bounded output: at most five file names are named, with a count for the remainder, so a large drift cannot bloat session context.'
+  - 'Disableable: CAWS_PACK_STALENESS_CHECK=0 silences the advisory without touching the pack.'
 acceptance:
   - id: A1
-    given: 'TODO'
-    when: 'TODO'
-    then: 'TODO'
+    given: 'a project whose installed stock file differs from the pinned runtime manifest entry'
+    when: 'the SessionStart agent-register hook runs'
+    then: 'additionalContext reports pack drift with the differing file named, and the hook still exits 0'
+  - id: A2
+    given: 'a project whose installed stock files all match the pinned runtime manifest'
+    when: 'the SessionStart hook runs'
+    then: 'no pack-drift context is emitted'
+  - id: A3
+    given: 'no readable runtime pointer or manifest in the machine home'
+    when: 'the SessionStart hook runs'
+    then: 'no pack-drift context is emitted and the hook exits 0 (fail-open)'
+  - id: A4
+    given: 'CAWS_PACK_STALENESS_CHECK=0 with a differing installed file'
+    when: 'the SessionStart hook runs'
+    then: 'no pack-drift context is emitted'
 observability:
   - 'The advisory names the count and the first few differing stock files and routes to the existing review surfaces (caws init --plan / init diff) and the sanctioned port (caws init port).'
 rollback:
@@ -29,7 +48,10 @@ rollback:
 non_functional:
   security:
     - 'Read-only advisory: the hook only reads the runtime pointer, manifest and installed files, emits a bounded context line, and fails open (missing pointer/manifest/jq/node or unreadable files emit nothing and never block). Customized project files are REPORTED as differing, never overwritten or reverted.'
+  reliability:
+    - 'One node process per SessionStart hashing the manifest entries (roughly forty files); any read or parse failure exits the helper silently, so the advisory can never wedge a session start.'
 contracts:
   - name: 'pack-staleness-advisory'
-    type: contract-test
+    type: 'contract-test'
     path: 'packages/caws-cli/tests/hooks/bats/agent-register-quarantine.bats'
+    description: 'Differing installed file -> advisory names it; all matching -> silent; missing pointer/manifest -> silent fail-open; CAWS_PACK_STALENESS_CHECK=0 -> silent.'
