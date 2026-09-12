@@ -81,3 +81,7 @@ evidence:
     status: pass
     evidence_ref: "jest tests/kernel/unit/doctor-copied-pack-lag.test.ts 'A3: empty and absent observations are silent' + 'matching versions stay silent even with a runtime present'"
     recorded_at: "2026-09-12T21:51:17.524Z"
+  - criterion_id: A4
+    status: pass
+    evidence_ref: "jest tests/init/pack-body-drift-observation.test.js — real installHookPack(SHARED_PACK): pristine => [], version-restamp-only => [] (the false-positive case), one body edit => exactly ['.caws/hooks/block-dangerous.sh'], two edits => sorted pair, restore => [], missing pack => []"
+    recorded_at: "2026-09-12T21:51:18.366Z"
