@@ -4,7 +4,7 @@ risk_tier: 2
 mode: fix
 lifecycle_state: draft
 created_at: '2026-09-12T23:23:26.870Z'
-updated_at: '2026-09-12T23:23:26.870Z'
+updated_at: '2026-09-12T23:23:27.731Z'
 created_by_session: 'session-b0a97e16-4eca-4d66-9377-f5e0e7fd1777'
 blast_radius:
   modules:
@@ -14,6 +14,20 @@ operational_rollback_slo: 5m
 scope:
   in:
     - 'TODO: list the file(s) or directories this spec authorizes.'
+    - packages/caws-cli/src/init/hook-install.ts
+    - packages/caws-cli/src/kernel/doctor/inspect.ts
+    - packages/caws-cli/src/kernel/doctor/rules.ts
+    - packages/caws-cli/src/kernel/doctor/types.ts
+    - packages/caws-cli/src/store/types.ts
+    - packages/caws-cli/src/store/doctor-snapshot.ts
+    - packages/caws-cli/src/shell/render/init-hook-pack.ts
+    - packages/caws-cli/src/shell/commands/init.ts
+    - packages/caws-cli/tests/kernel/unit/doctor-hook-growth-classification.test.ts
+    - packages/caws-cli/tests/init/pack-body-drift-observation.test.js
+    - packages/caws-cli/tests/init/init-hook-pack-render.test.js
+    - packages/caws-cli/tests/kernel/unit/doctor-copied-pack-lag.test.ts
+    - packages/caws-cli/tests/kernel/unit/doctor-installed-pack-lag.test.ts
+    - packages/caws-cli/CHANGELOG.md
   out: []
 invariants:
   - 'TODO: describe one invariant this spec guarantees.'
