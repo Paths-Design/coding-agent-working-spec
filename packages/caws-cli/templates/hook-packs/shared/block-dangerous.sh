@@ -498,8 +498,23 @@ if [[ -f "$LATCH_FILE" ]]; then
     trap_escalate "$LATCH_FILE" "$SESSION_ID" "$COMMAND"
     exit 0
   fi
+  # DANGER-LATCH-TRAP-CLASSIFIER-INTERSECTION-001: the allowlist is a
+  # NECESSARY condition, not a sufficient one. The pre-fix branch made it an
+  # ALTERNATIVE to the classifier for allowlisted binaries, so `cat` with any
+  # separator-free path was admitted while trapped — including credential
+  # files the classifier explicitly denies (`cat ~/.ssh/id_rsa`,
+  # `cat /etc/passwd`, `cat .env`), exactly when the session is under
+  # suspicion. Admission is now the INTERSECTION: allowlist AND classifier
+  # "allow". ask-class denies too (a quarantined session cannot prompt a
+  # human), and an unresolvable classifier ("unavailable") fails closed. The
+  # corpus harness over 4,759 real commands is the falsifier: false admits -> 0.
+  TRAP_INTERSECTION_NOTE=""
   if latch_read_only_command "$COMMAND"; then
-    exit 0
+    TRAP_CLS_DECISION="$(classify_decision "$COMMAND")"
+    if [[ "$TRAP_CLS_DECISION" == "allow" ]]; then
+      exit 0
+    fi
+    TRAP_INTERSECTION_NOTE=" This command IS read-only in shape and on the fixed allowlist, but the classifier refuses it (decision: ${TRAP_CLS_DECISION:-unavailable}), so the intersection denies it."
   fi
 
   trap_record_strike "$LATCH_FILE" "$COMMAND"
@@ -518,7 +533,7 @@ if [[ -f "$LATCH_FILE" ]]; then
     fi
     TRIGGER_NOTE="$TRIGGER_NOTE — NOT by the command you just ran. The trap is sticky: only fixed read-only commands and the reset itself run."
   fi
-  REASON="CAWS command-safety: this session is QUARANTINED. $TRIGGER_NOTE This command is not in the read-only allowlist, so it is blocked and the attempt was recorded as a strike — on surfaces with kill escalation enabled, the first such attempt ends this session's process (identity-verified SIGTERM to the agent pid). This is a human-review boundary, not a retryable syntax error. Do not rephrase, wrap, reorder, alias, or indirectly invoke anything to get around it, and do not ask another agent to run it for you. You, the agent, CANNOT clear this in-band: the reset is human-only by design. Ask the USER to run, from their own shell (use --session with THIS session id, not --current): $RECOVERY_COMMAND  (or --all to clear every latch). Sentinel: $LATCH_FILE"
+  REASON="CAWS command-safety: this session is QUARANTINED. $TRIGGER_NOTE$TRAP_INTERSECTION_NOTE This command is not admissible while trapped — trapped admission requires BOTH the fixed read-only allowlist AND a classifier allow — so it is blocked and the attempt was recorded as a strike — on surfaces with kill escalation enabled, the first such attempt ends this session's process (identity-verified SIGTERM to the agent pid). This is a human-review boundary, not a retryable syntax error. Do not rephrase, wrap, reorder, alias, or indirectly invoke anything to get around it, and do not ask another agent to run it for you. You, the agent, CANNOT clear this in-band: the reset is human-only by design. Ask the USER to run, from their own shell (use --session with THIS session id, not --current): $RECOVERY_COMMAND  (or --all to clear every latch). Sentinel: $LATCH_FILE"
   emit_block_json "$REASON"
   trap_escalate "$LATCH_FILE" "$SESSION_ID" "$COMMAND"
   exit 0
