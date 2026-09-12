@@ -73,3 +73,7 @@ evidence:
     status: pass
     evidence_ref: "bats 'A2' + 'A2b'; falsified by a blanket-blank mutation (removing the sink==0 guard) which turned exactly A2 and A2b red"
     recorded_at: "2026-09-12T22:07:00.807Z"
+  - criterion_id: A3
+    status: pass
+    evidence_ref: "bats 'A3' siblings: a redirect before the heredoc still hard-blocks (assert_failure + BLOCKED)"
+    recorded_at: "2026-09-12T22:07:01.364Z"
