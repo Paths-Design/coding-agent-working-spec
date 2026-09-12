@@ -204,10 +204,24 @@ classify_decision() {
   printf '%s' "$result" | jq -r '.decision // "ask"' 2>/dev/null || printf 'ask'
 }
 
-# Does this command INVOKE the pack's own reset-danger-latch.sh escape hatch?
+# Does this command INVOKE the pack's own reset-dangerous-latch.sh escape hatch?
+# DANGER-LATCH-RESET-EXEMPT-ANCHOR-001 (port of consumer hardening
+# STERLING-LATCH-RESET-PREFIX-EXEMPTS-UNEXAMINED-REMAINDER-01 / DOC-TH-MA-001
+# §7): the exemption is the trap's ONLY exit, so it must admit exactly ONE
+# simple invocation. The pre-fix prefix-match exempted
+# `reset-danger-latch.sh ... && <arbitrary remainder>` — a compound command
+# rode the exemption past the trap unexamined. Hardened shape, all
+# end-anchored (nothing may follow the invocation):
+#   - optional benign prefixes: `cd <dir> &&`, `VAR=value` assignments, and
+#     `env VAR=value ...` (the emitted machine recovery command's shape)
+#   - the reset script, optionally invoked via bash/sh/. with a path
+#   - arguments free of command separators, substitution metacharacters
+#     ($ backtick), parentheses, and redirection operators
+# Fails closed: any shape this cannot prove simple is NOT exempted.
 is_reset_latch_invocation() {
   local cmd="$1"
-  printf '%s' "$cmd" | grep -qE '^[[:space:]]*((bash|sh|\.)[[:space:]]+)?([^[:space:];|&]*/)?reset-danger-latch\.sh([[:space:]]|$)'
+  printf '%s' "$cmd" | grep -qE \
+    '^[[:space:]]*((cd[[:space:]]+[^;&|`$<>()]+&&[[:space:]]*)|(env[[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[^;&|`$<>()[:space:]]+([[:space:]]+|$))|([A-Za-z_][A-Za-z0-9_]*=[^;&|`$<>()[:space:]]+[[:space:]]+))*[[:space:]]*((bash|sh|\.)[[:space:]]+)?([^[:space:];&|`$<>()]*/)?reset-danger-latch\.sh([[:space:]]+[^;&|`$<>()]*)?[[:space:]]*$'
 }
 
 # --- DANGER-LATCH-QUARANTINE-TRAP-001: quarantine admission + escalation ---

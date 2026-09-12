@@ -513,3 +513,39 @@ _wait_for_sentinel_stamp() {
   grep -q 'pid drifted' "$CAWS_TEST_REPO/.claude/logs/danger-latch-escalations.log"
   refute [ -n "$(jq -r '.trap_escalated_pid // ""' "$sentinel")" ]
 }
+
+# --- DANGER-LATCH-RESET-EXEMPT-ANCHOR-001: the trap exit is end-anchored ------
+#
+# Ported from consumer hardening STERLING-LATCH-RESET-PREFIX-EXEMPTS-
+# UNEXAMINED-REMAINDER-01: the reset exemption is the trap's ONLY exit, so it
+# admits exactly ONE simple invocation — benign cd/env prefixes, separator-
+# and-substitution-free arguments, and NOTHING after the invocation.
+
+@test "trap: reset exemption is end-anchored — compound remainders are NOT exempt (ANCHOR A3)" {
+  local sid="trap-anchor-a3-$$"
+  _arm_trap "$sid"
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'bash .caws/hooks/reset-danger-latch.sh --session x --reason y && rm -rf /')"
+  assert_output --partial '"decision": "block"'
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'bash .caws/hooks/reset-danger-latch.sh --session x; git push')"
+  assert_output --partial '"decision": "block"'
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'bash .caws/hooks/reset-danger-latch.sh --session x | sh')"
+  assert_output --partial '"decision": "block"'
+}
+
+@test "trap: reset exemption admits benign prefixes incl. the emitted machine recovery shape (ANCHOR A2)" {
+  local sid="trap-anchor-a2-$$"
+  _arm_trap "$sid"
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'cd /repo && bash .caws/hooks/reset-danger-latch.sh --session x --reason y')"
+  assert_success
+  refute_output --partial '"decision"'
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'env CAWS_MACHINE_RUNTIME=1 CAWS_PROJECT_DIR=/abs/project CAWS_AGENT_SURFACE=claude-code bash /caws/lib/runtimes/deadbeef/reset-danger-latch.sh --session x --reason safe')"
+  assert_success
+  refute_output --partial '"decision"'
+}
+
+@test "trap: reset args with substitution metacharacters are not exempt (ANCHOR A4)" {
+  local sid="trap-anchor-a4-$$"
+  _arm_trap "$sid"
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'bash .caws/hooks/reset-danger-latch.sh --session x --reason "$(whoami)"')"
+  assert_output --partial '"decision": "block"'
+}
