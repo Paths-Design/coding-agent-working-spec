@@ -105,3 +105,7 @@ evidence:
     status: pass
     evidence_ref: "jest tests/kernel/unit/doctor-global-home.test.ts 'A6: a home whose only extra entry is sessions does not warn'"
     recorded_at: "2026-09-12T22:07:06.340Z"
+  - criterion_id: A7
+    status: pass
+    evidence_ref: "jest tests/kernel/unit/doctor-half-state.test.ts 'A7: the downgrade path mutates nothing on a deeply-frozen input'"
+    recorded_at: "2026-09-12T22:07:06.869Z"
