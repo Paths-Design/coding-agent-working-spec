@@ -845,3 +845,50 @@ describe('A8: the DSH description derives its mechanism from the surface registr
     }
   });
 });
+
+/**
+ * CAWS-DEFECT-HOOK-DRIFT-NO-NONDESTRUCTIVE-DISCHARGE-01 A6 — the activation
+ * contract no longer claims "Pre-tool-call governance is NOT in effect" on a
+ * run that merely installed nothing. A bare `caws init --adopt` (no surface
+ * detected) is a verified no-op: the panel must say what the run did, that
+ * pre-existing installs stand, and what --adopt actually scopes to.
+ */
+describe('A6: no-pack activation renders the run honestly (CAWS-DEFECT-HOOK-DRIFT-NO-NONDESTRUCTIVE-DISCHARGE-01)', () => {
+  const NO_PACK_RESULT = {
+    pack: null,
+    outcome: 'skipped_explicit_none',
+    activation: 'not_applicable',
+    actions: [],
+  };
+
+  test('a no-pack run states what it did without asserting governance is disabled', () => {
+    const out = renderActivationContract(NO_PACK_RESULT);
+    expect(out).toContain('This run installed no hook pack');
+    expect(out).toContain('Nothing was written or changed by this step');
+    expect(out).toContain('remains in effect unchanged');
+    expect(out).not.toContain('NOT in effect');
+  });
+
+  test('an adopt no-op names the scope of --adopt explicitly', () => {
+    const out = renderActivationContract(NO_PACK_RESULT, undefined, { adoptRequested: true });
+    expect(out).toContain('--adopt only decides collision handling DURING an install');
+    expect(out).toContain('writes nothing');
+    expect(out).not.toContain('NOT in effect');
+  });
+
+  test('a no-pack run without adopt does not mention adopt', () => {
+    const out = renderActivationContract(NO_PACK_RESULT);
+    expect(out).not.toContain('--adopt');
+  });
+
+  test('skipped_ambiguous renders the same honesty (shared no-pack panel)', () => {
+    const out = renderActivationContract(
+      { pack: null, outcome: 'skipped_ambiguous', activation: 'not_applicable', actions: [] },
+      undefined,
+      { adoptRequested: true }
+    );
+    expect(out).toContain('This run installed no hook pack');
+    expect(out).not.toContain('NOT in effect');
+    expect(out).toContain('--adopt only decides collision handling DURING an install');
+  });
+});
