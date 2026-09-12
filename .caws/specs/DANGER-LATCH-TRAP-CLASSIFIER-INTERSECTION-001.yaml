@@ -69,3 +69,7 @@ evidence:
     status: pass
     evidence_ref: bats INTERSECT A3 (ls/git status still admit) + 255/255 full tree
     recorded_at: "2026-09-12T20:33:03.549Z"
+  - criterion_id: A4
+    status: pass
+    evidence_ref: "corpus falsifier: 4759 real commands, false admits 10 -> 0 (CAWS_CANON=worktree template)"
+    recorded_at: "2026-09-12T20:33:04.823Z"
