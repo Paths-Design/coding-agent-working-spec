@@ -414,7 +414,16 @@ import { isAdapterCoveredSurface } from './types';
 // fact always re-surfaces. The ledger is per-session machine state, bounded by
 // CAWS_HOOK_ADVISORY_DEDUP_MAX, fail-open on any fault, and every suppression is
 // reported on stderr.
-export const SHARED_PACK_VERSION = 67;
+// HOOKPACK-SHARED-VERSION-STAMP-INTEGRITY-001: every staleness signal in the
+// guard plane keys on this number, not on file content — the SessionStart
+// pack-drift advisory compares it to the pinned runtime, and
+// doctor.hooks.installed_pack_version_lag compares it to the installed header.
+// Shared template changes that land without a bump (as several did across this
+// line of work, including the trap, the classifier intersection, the JSONL
+// audit, and lib/heredoc.sh) move the enforcement plane while leaving every
+// consumer of the signal believing nothing changed. Bump it WITH the template
+// change; tests/init/pack-fingerprint.test.js fails closed otherwise.
+export const SHARED_PACK_VERSION = 68;
 
 /**
  * The vendored TELEMETRY rows: the turn-log fold (session-log.sh +
