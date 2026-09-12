@@ -277,7 +277,7 @@ A reprieve requires `--reason`, `--approved-by`, and exactly one of `--for` or `
 - **Architecture decisions** — when the design affects multiple components or governed paths.
 - **Waivers on T1 gates** — emergency only; document mitigation plan.
 - **`caws claim --takeover`** — never without explicit authorization.
-- **A dangerous-command hook fires** — `block-dangerous.sh` returning `block` or `ask` is a human-review boundary, not a syntax problem to solve. Do not rephrase, wrap, reorder, or alias the command. Stop and ask. The hook also engages a per-session quarantine trap: only fixed read-only commands run until the user runs `reset-danger-latch.sh`; every other attempt is recorded as a strike, `caws message send`/`reply` are refused, and on kill-enabled surfaces the first such attempt terminates the session's process. Read [`docs/failure-lineage.md`](docs/failure-lineage.md) Entry 17 for why this rule exists.
+- **A dangerous-command hook fires** — `block-dangerous.sh` returning `block` or `ask` is a human-review boundary, not a syntax problem to solve. Do not rephrase, wrap, reorder, or alias the command. Stop and ask. The hook also engages a per-session quarantine trap: only fixed read-only commands run until the user runs `reset-danger-latch.sh`; every other attempt — including every Write/Edit, so a file write cannot route around the shell boundary — is recorded as a strike, `caws message send`/`reply` are refused, and on kill-enabled surfaces the first such attempt terminates the session's process. Read [`docs/failure-lineage.md`](docs/failure-lineage.md) Entry 17 for why this rule exists.
 
 ## Resources
 

@@ -549,3 +549,43 @@ _wait_for_sentinel_stamp() {
   run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'bash .caws/hooks/reset-danger-latch.sh --session x --reason "$(whoami)"')"
   assert_output --partial '"decision": "block"'
 }
+
+# --- DANGER-LATCH-TRAP-WRITE-EDIT-001: the trap covers the file tools --------
+#
+# The Bash-only trap left Write/Edit mutation open to a quarantined session —
+# on kill-disabled surfaces that reduced "quarantine" to "no shell mutations".
+# A trapped session now gets NO file-tool mutation; untrapped traffic is
+# untouched.
+
+_write_env() { jq -nc --arg s "$1" --arg f "$2" '{tool_name:"Write",tool_input:{file_path:$f},session_id:$s}'; }
+_edit_env() { jq -nc --arg s "$1" --arg f "$2" '{tool_name:"Edit",tool_input:{file_path:$f,old_string:"a",new_string:"b"},session_id:$s}'; }
+
+@test "trap: file tools are denied while quarantined, striking each attempt (WRITE-EDIT A1)" {
+  local sid="trap-we-a1-$$"
+  local sentinel; sentinel="$(_sentinel_for "$sid")"
+  _arm_trap "$sid"
+  run_guard block-dangerous.sh "$(_write_env "$sid" "$CAWS_TEST_REPO/src/probe.txt")"
+  assert_output --partial '"decision": "block"'
+  assert_output --partial 'file mutations are refused'
+  run_guard block-dangerous.sh "$(_edit_env "$sid" "$CAWS_TEST_REPO/src/probe.txt")"
+  assert_output --partial '"decision": "block"'
+  [ "$(jq -r '.trap_strikes // 0' "$sentinel")" = "2" ]
+}
+
+@test "trap: file tools are untouched when NOT quarantined (WRITE-EDIT A2)" {
+  local sid="trap-we-a2-$$"
+  run_guard block-dangerous.sh "$(_write_env "$sid" "$CAWS_TEST_REPO/src/probe.txt")"
+  assert_success
+  refute_output --partial 'decision'
+  refute _latch_exists_for "$sid"
+}
+
+@test "trap: file-tool denial escalates through the shared verified path (WRITE-EDIT A3)" {
+  local sid="trap-we-a3-$$"
+  _arm_trap "$sid"
+  run env CAWS_PROJECT_DIR="$CAWS_TEST_REPO" CAWS_AGENT_SURFACE="claude-code" \
+    CAWS_TRAP_KILL=0 HOOK_CWD="$CAWS_TEST_REPO" \
+    bash -c "printf '%s' '$(_write_env "$sid" "$CAWS_TEST_REPO/src/probe.txt")' | bash '$CAWS_TEST_HOOKS_DIR/block-dangerous.sh'"
+  assert_output --partial '"decision": "block"'
+  grep -q "Write $CAWS_TEST_REPO/src/probe.txt" "$CAWS_TEST_REPO/.claude/logs/danger-latch-escalations.log"
+}
