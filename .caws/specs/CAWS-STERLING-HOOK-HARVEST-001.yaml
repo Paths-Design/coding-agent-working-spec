@@ -49,3 +49,11 @@ evidence:
     recorded_at: "2026-09-12T23:42:24.994Z"
     artifact_path: docs/audits/sterling-hook-harvest.md
     commit_sha: bfc35683
+  - criterion_id: A3
+    status: pass
+    evidence_ref: Four harvest fixture tests passed; all five CAWS gates passed after bfc35683; doctor findings and consumer fidelity failure retained in report; source committed in 65830834 and bfc35683
+    recorded_at: "2026-09-12T23:42:34.890Z"
+    command: caws gates run --spec CAWS-STERLING-HOOK-HARVEST-001
+    exit_code: 0
+    artifact_path: docs/audits/sterling-hook-harvest.md
+    commit_sha: bfc35683
