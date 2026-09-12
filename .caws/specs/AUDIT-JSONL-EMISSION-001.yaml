@@ -55,3 +55,8 @@ contracts:
     type: 'contract-test'
     path: 'packages/caws-cli/tests/hooks/bats/audit-jsonl.bats'
     description: 'Per-line JSON parse of both sinks; tool payload fields present; is_error derived from exit_code in both directions; every event branch emits one line.'
+evidence:
+  - criterion_id: A1
+    status: pass
+    evidence_ref: "bats audit-jsonl.bats (4/4) + full 262/262 bats, 138/138 pytest"
+    recorded_at: "2026-09-12T20:56:30.416Z"
