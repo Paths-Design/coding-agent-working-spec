@@ -83,3 +83,8 @@ contracts:
     type: contract-test
     path: 'packages/caws-cli/tests/init/pack-body-drift-observation.test.js'
     description: 'Observer decomposes real installs into growth/upstream rows against baselines.'
+evidence:
+  - criterion_id: A1
+    status: pass
+    evidence_ref: "jest tests/init/pack-body-drift-observation.test.js 'a genuine body edit yields a growth-classified row' + 'a drifted baseline records upstream change alongside growth' + 'a drifted file with NO baseline is unobserved' — real install, real baselines"
+    recorded_at: "2026-09-12T23:38:41.651Z"
