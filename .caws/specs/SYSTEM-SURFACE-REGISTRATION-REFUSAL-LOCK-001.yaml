@@ -49,3 +49,8 @@ non_functional:
   security:
     - 'The locked invariant is the one that keeps a governance downgrade from being silent: an unsupported surface must be refused BEFORE any machine settings are written, so a partially configured surface cannot make init stop maintaining the pack the harness actually executes.'
 contracts: []
+evidence:
+  - criterion_id: A1
+    status: pass
+    evidence_ref: "jest system-registration: refuses dsh, opencode and zcode with the message naming the supported set AND asserts snapshotTree(user) unchanged plus no surfaces/<x> dir written"
+    recorded_at: "2026-09-12T23:12:20.406Z"
