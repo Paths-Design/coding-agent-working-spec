@@ -60,3 +60,8 @@ contracts:
     type: 'contract-test'
     path: 'packages/caws-cli/tests/hooks/bats/block-dangerous.bats'
     description: 'Trapped sessions: Write and Edit are denied with strikes and escalated through the shared path; untrapped sessions see no change; the sentinel self-clear stays blocked by protected-paths.'
+evidence:
+  - criterion_id: A1
+    status: pass
+    evidence_ref: bats block-dangerous.bats WRITE-EDIT A1-A3 + full-tree 252/252 green
+    recorded_at: "2026-09-12T20:08:59.623Z"
