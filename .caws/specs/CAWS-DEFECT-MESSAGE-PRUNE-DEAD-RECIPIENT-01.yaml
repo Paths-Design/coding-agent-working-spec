@@ -108,3 +108,7 @@ evidence:
     status: pass
     evidence_ref: "jest tests/store/messages-dead-recipient-prune.test.js 'A7' — leases registry unloadable => plan errs, ledger untouched, no archive written"
     recorded_at: "2026-09-12T22:19:19.419Z"
+  - criterion_id: A8
+    status: pass
+    evidence_ref: "jest tests/store/messages-dead-recipient-prune.test.js 'A8' + the four pre-existing delivered-mode tests in tests/shell/message-retention-prune.test.js pass unmodified except the superseded metadata description assertion (rewritten with falsifying evidence in its comment)"
+    recorded_at: "2026-09-12T22:19:19.957Z"
