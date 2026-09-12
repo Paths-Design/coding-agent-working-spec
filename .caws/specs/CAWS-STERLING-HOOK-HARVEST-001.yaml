@@ -43,3 +43,9 @@ evidence:
     recorded_at: "2026-09-12T23:42:13.283Z"
     artifact_path: docs/audits/sterling-hook-harvest.md
     commit_sha: bfc35683
+  - criterion_id: A2
+    status: pass
+    evidence_ref: "Manual shared-path and support-family review, machine selection trace, counterexamples, and six-step adoption sequence in docs/audits/sterling-hook-harvest.md"
+    recorded_at: "2026-09-12T23:42:24.994Z"
+    artifact_path: docs/audits/sterling-hook-harvest.md
+    commit_sha: bfc35683
