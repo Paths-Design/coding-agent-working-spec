@@ -890,8 +890,19 @@ export function runMessageHistoryCommand(opts: MessageHistoryCommandOptions): nu
 
 export function runMessagePruneCommand(opts: MessagePruneCommandOptions = {}): number {
   const { cwd, out, err, showData } = defaults(opts);
-  if (opts.status !== 'delivered') {
-    err('caws message prune: --status delivered is required.');
+  // CAWS-DEFECT-MESSAGE-PRUNE-DEAD-RECIPIENT-01: the status axis is a closed
+  // enum. A bare `undelivered` is deliberately absent — pruning undelivered
+  // messages without proving the recipient cannot consume them would break
+  // deliver-once; the dead-recipient selector carries that proof.
+  const status =
+    opts.status === 'delivered' || opts.status === 'undelivered-to-dead-session'
+      ? opts.status
+      : null;
+  if (status === null) {
+    err(
+      `caws message prune: --status accepts delivered or undelivered-to-dead-session (got ${JSON.stringify(opts.status ?? '')}). ` +
+        `A bare --status undelivered is refused on purpose: undelivered messages are prunable only when the recipient is verifiably not live (no lease, or a heartbeat older than the TTL) and the message is older than the retention floor — use --status undelivered-to-dead-session.`
+    );
     return 1;
   }
 
@@ -903,7 +914,7 @@ export function runMessagePruneCommand(opts: MessagePruneCommandOptions = {}): n
   }
 
   const result = pruneMessages(rootResult.value.cawsDir, {
-    status: 'delivered',
+    status,
     ...(typeof opts.olderThanMs === 'number' && Number.isFinite(opts.olderThanMs)
       ? { olderThanMs: Math.max(0, Math.floor(opts.olderThanMs)) }
       : {}),
@@ -923,6 +934,42 @@ export function runMessagePruneCommand(opts: MessagePruneCommandOptions = {}): n
       dry_run: opts.apply !== true,
       ...result.value,
     }));
+    return 0;
+  }
+
+  if (status === 'undelivered-to-dead-session') {
+    const floorMs = result.value.dead_recipient_floor_ms ?? 0;
+    const mode = opts.apply === true ? 'applied' : 'dry-run';
+    out(
+      `Message prune (${mode}, status=undelivered-to-dead-session, floor ${formatAge(floorMs)}): ` +
+        `${result.value.candidates.length} candidate(s), ${result.value.skipped.length} skipped`
+    );
+    if (opts.apply === true) {
+      out(
+        `Pruned ${result.value.pruned_messages} undelivered message(s) to dead recipient(s). ` +
+          `Archived to .caws/messages.jsonl.archive with a selector marker (telemetry; not read for delivery state).`
+      );
+    } else {
+      out('No changes written. Pass --apply to prune the listed dead-recipient messages (retention floor applies).');
+    }
+    for (const candidate of result.value.candidates) {
+      out(`candidate ${renderPruneEntry(candidate)}`);
+    }
+    const preservedLive = result.value.skipped.filter(
+      (entry) => entry.reason === 'recipient-live' || entry.reason === 'recipient-idle'
+    ).length;
+    if (preservedLive > 0) {
+      out(`Preserved ${preservedLive} message(s) for live or idle recipient(s) — deliver-once holds.`);
+    }
+    const preservedFloor = result.value.skipped.filter(
+      (entry) => entry.reason === 'newer-than-floor' || entry.reason === 'offer-pending'
+    ).length;
+    if (preservedFloor > 0) {
+      out(`Held back ${preservedFloor} message(s) newer than the floor or pending offer settlement.`);
+    }
+    if (result.value.diagnostics.length > 0) {
+      err(renderDiagnostics(result.value.diagnostics, { showData }));
+    }
     return 0;
   }
 
