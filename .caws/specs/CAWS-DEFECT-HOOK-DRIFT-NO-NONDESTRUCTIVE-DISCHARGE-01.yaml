@@ -34,11 +34,11 @@ scope:
   out:
     - packages/caws-cli/dist
 invariants:
-  - 'Recorded in sterling/tmp/caws_cli_defects.md (Defect 4): observeSharedPackBodyDrift flags drift on raw body comparison with no adoption exclusion, and the only discharge for doctor.hooks.pack_body_drift / installed_pack_version_lag is caws init --overwrite --force, which destroys deliberate guard growth. On sterling all 17 drifted files carry verified local growth (every file has a pristine baseline; zero are safely refreshable), so the warning class demands a remedy that would destroy the guard plane — the same no-discharge defect class as the event-orphan fix, in the destructive direction.'
-  - 'The pristine baselines the installer already writes (.caws/hooks/.pristine/<packId>/<destPath>, CAWS-HOOKPACK-UPGRADE-RETROFIT-001 A3/A4) are the authority for deliberateness: LOCAL GROWTH = installed body differs from its recorded baseline; UPSTREAM change = baseline differs from the current rendered template. A drifted file with a baseline whose installed body matches the baseline is a growth-free stale copy; a drifted file WITHOUT a baseline is unobserved. Unobserved is never downgraded (the established tombstone discipline).'
+  - 'Recorded in sterling/tmp/caws_cli_defects.md (Defect 4): observeSharedPackBodyDrift flags drift on raw body comparison with no adoption exclusion, and the only discharge for doctor.hooks.pack_body_drift / installed_pack_version_lag is caws init --overwrite --force, which destroys deliberate guard growth. On sterling all 17 drifted files carry deliberate Sterling growth per the session manual diff classification (every file has a pristine baseline; zero are safely refreshable), so the warning class demands a remedy that would destroy the guard plane — the same no-discharge defect class as the event-orphan fix, in the destructive direction.'
+  - 'The pristine baselines the installer writes (.caws/hooks/.pristine/<packId>/<destPath>, CAWS-HOOKPACK-UPGRADE-RETROFIT-001 A3/A4) are the authority for NEW growth only: LOCAL GROWTH = installed body differs from its recorded baseline; UPSTREAM change = baseline differs from the current rendered template. CORRECTED BY LIVE FALSIFICATION (sterling post_tool_use.sh: installed==baseline yet both carry the REPO-LOCAL banner the shipping template lacks): the port path re-baselines the ported body, so a baseline records the last body the install machinery vouched for, NOT the unmodified template. installed==baseline is therefore AMBIGUOUS — an unedited stale copy OR growth absorbed into the baseline by an earlier port — and is NEVER proof of refreshability. Only installed!=baseline authorizes the informational downgrade; a drifted row without that proof keeps the warning, worded as ambiguous. A row without a baseline is unobserved and also keeps the warning.'
   - 'Doctor stays pure: classification consumes caller-provided rows only; the kernel performs no I/O (frozen-input contract holds). The observer degrades per-file (a read failure skips the row classification, never crashes doctor).'
-  - 'The severity split: verified local growth renders as a NEW info rule (doctor.hooks.pack_local_growth) naming the paths, the baseline pack version, and which growth files also carry upstream changes the retrofit must port; growth-free stale copies keep the existing pack_body_drift warning naming ONLY those paths. installed_pack_version_lag downgrades to info exactly when drift rows exist and every one is growth-classified — deliberate divergence fully explains the lag; any stale row, any missing baseline, or zero drift rows keeps the warning.'
-  - 'Repair texts stop offering --adopt as a discharge: adopt resolves collisions during an install run and writes nothing persistent — it cannot advance the version stamp or silence doctor. The warning repair names refresh for stale copies; the info repairs name the retrofit (absorb growth upstream, re-init) as the reconciliation.'
+  - 'The severity split: verified NEW growth renders as a NEW info rule (doctor.hooks.pack_local_growth) naming the paths, the baseline pack version, and which growth files also carry upstream changes the retrofit must port; every other drifted row keeps the existing pack_body_drift warning naming ONLY those paths, with a repair demanding the diff be read before any refresh (port-absorbed growth looks baseline-clean). installed_pack_version_lag downgrades to info exactly when drift rows exist and every one has verified new growth — any other shape, including no drift rows at all, keeps the warning.'
+  - 'Repair texts stop offering --adopt as a discharge: adopt resolves collisions during an install run and writes nothing persistent — it cannot advance the version stamp or silence doctor. The warning repair names diff-then-refresh with the ambiguity caveat; the info repairs name the retrofit (absorb growth upstream, re-init) as the reconciliation.'
   - 'The activation-contract render never claims "Pre-tool-call governance is NOT in effect" on a run that merely installed nothing: a no-pack run states what the run did (nothing written), that any already-installed pack remains in effect unchanged, and — when --adopt was requested — that adopt only affects collision resolution during an install. Existing install/overwrite behavior is byte-unchanged.'
 acceptance:
   - id: A1
@@ -48,15 +48,15 @@ acceptance:
   - id: A2
     given: 'doctor input with drift rows where at least one has baselinePresent && localGrowth'
     when: 'inspectProjectState runs'
-    then: 'doctor.hooks.pack_local_growth fires at severity info naming exactly the growth paths, and doctor.hooks.pack_body_drift (warning) names only the non-growth rows'
+    then: 'doctor.hooks.pack_local_growth fires at severity info naming exactly the growth paths, and doctor.hooks.pack_body_drift (warning) names only the non-growth rows, wording them as AMBIGUOUS (possibly port-absorbed growth) rather than refreshable'
   - id: A3
-    given: 'doctor input with installed<shipping version and drift rows that are ALL growth-classified'
+    given: 'doctor input with installed<shipping version and drift rows that ALL have verified new growth'
     when: 'inspectProjectState runs'
-    then: 'doctor.hooks.installed_pack_version_lag fires at severity info with data carrying the growth/stale split; with any stale row, any baseline-less row, or zero drift rows it stays a warning'
+    then: 'doctor.hooks.installed_pack_version_lag fires at severity info with data carrying the growth/stale split; with any clean-baseline row, any baseline-less row, or zero drift rows it stays a warning'
   - id: A4
-    given: 'a drift row with baselinePresent=false'
+    given: 'a drift row with baselinePresent=false, or baselinePresent=true with no verified new growth'
     when: 'inspectProjectState runs'
-    then: 'the row counts as stale for both the body-drift warning and the version-lag condition — unobserved never downgrades'
+    then: 'the row keeps the body-drift warning and holds the version-lag at warning — unverified never downgrades, and baseline-clean is unverified (port absorption)'
   - id: A5
     given: 'any input, including a deep-frozen snapshot with classified rows'
     when: 'inspectProjectState runs'
@@ -66,9 +66,9 @@ acceptance:
     when: 'renderActivationContract runs'
     then: 'the panel states the run wrote nothing, that an already-installed pack remains in effect, and that adopt only resolves collisions during an install — and does NOT assert governance is not in effect'
   - id: A7
-    given: 'the sterling checkout (17 drifted files, all with baselines and verified growth)'
+    given: 'the sterling checkout (17 drifted files, all with baselines; live classification: 8 with verified new growth, 9 baseline-clean — at least post_tool_use.sh provably carries port-absorbed growth)'
     when: 'the locally built CLI runs doctor'
-    then: 'pack_body_drift warning is replaced by pack_local_growth info naming all 17, and installed_pack_version_lag renders info — warnings drop by two with zero findings suppressed that were not evidence-backed'
+    then: 'pack_local_growth info names exactly the 8 verified-growth paths; pack_body_drift warning names the 9 ambiguous paths with the port-absorption caveat; installed_pack_version_lag stays a warning — the warning COUNT is unchanged but every row is now evidence-classified, and nothing refresh-destroying is offered as safe'
 non_functional:
   reliability:
     - 'Per-file observation failures skip that row (existing convention); a wholly unreadable pack yields an empty observation, which is silent. Classification adds two string comparisons per drifted file — no new subprocess, no new git call.'
