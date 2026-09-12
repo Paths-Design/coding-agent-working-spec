@@ -68,3 +68,7 @@ evidence:
     status: pass
     evidence_ref: "bats DRYRUN A1-A2 + existing kill=1/kill=0 regression (264/264 bats, 138/138 pytest)"
     recorded_at: "2026-09-12T21:04:06.664Z"
+  - criterion_id: A4
+    status: pass
+    evidence_ref: "bats DRYRUN A1-A2 + existing kill=1/kill=0 regression (264/264 bats, 138/138 pytest)"
+    recorded_at: "2026-09-12T21:04:07.807Z"
