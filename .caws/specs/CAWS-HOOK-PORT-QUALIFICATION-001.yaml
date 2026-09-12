@@ -1,0 +1,56 @@
+id: CAWS-HOOK-PORT-QUALIFICATION-001
+title: 'Port and falsify harvested hook governance, tenure, and logging mechanisms'
+risk_tier: 2
+mode: feature
+lifecycle_state: draft
+created_at: '2026-09-12T23:55:13.776Z'
+updated_at: '2026-09-12T23:55:13.776Z'
+created_by_session: '01a097e1-0a6f-7821-80d8-dedde2ac2cd6'
+blast_radius:
+  modules:
+    - 'Shared hook runtime, session reconstruction, governance guards, and focused experiment harness'
+  data_migration: false
+operational_rollback_slo: 5m
+scope:
+  in:
+    - 'packages/caws-cli/templates/hook-packs/shared/'
+    - 'packages/caws-cli/templates/hook-packs/runtime/'
+    - 'packages/caws-cli/templates/hook-packs/codex/hooks/lib/session-transcript.py'
+    - 'packages/caws-cli/tests/hooks/'
+    - 'packages/caws-cli/tests/adapter/'
+    - 'packages/caws-cli/src/init/hook-packs/manifest-shared.ts'
+    - 'packages/caws-cli/tests/init/pack-fingerprints.json'
+    - 'scripts/hook-experiments/'
+    - 'docs/audits/hook-port-qualification.md'
+    - 'docs/audits/sterling-hook-harvest.md'
+  out: []
+invariants:
+  - 'Recognition and logging never confer authority; worktree owners remain authoritative regardless of lease freshness or transcript parentage.'
+  - 'Captured terminal commands are data only; original corpus and generated runtime artifacts stay outside tracked source.'
+  - 'Fixture success, selected installed execution, and live native harness behavior are distinct evidence levels; uncertainty and unverified boundaries are explicit.'
+acceptance:
+  - id: A1
+    given: 'installed stock and project-overridden hooks'
+    when: 'effective execution is inspected and exercised'
+    then: 'ordered selected paths and digests are observable and an unselected local repair cannot masquerade as installed behavior.'
+  - id: A2
+    given: 'current owners, foreign owners, quoted commands, dynamic operands and permission modes'
+    when: 'governance scenarios run'
+    then: 'required refusals and ordinary allowed operations survive adversarial and sensitivity controls with concrete outputs and ownership state.'
+  - id: A3
+    given: 'multi-surface transcripts, interjections, forked sessions and changing sidecars'
+    when: 'logging and optional acceleration run'
+    then: 'source provenance, per-session isolation and artifact freshness survive fidelity and cache invalidation experiments without losing current surface support.'
+  - id: A4
+    given: 'the terminal corpus and optional utility hooks'
+    when: 'focused experiments run'
+    then: 'commands are never executed, held-out observations are not treated as labels, parser counterexamples and preservation cases produce inspectable reports.'
+  - id: A5
+    given: 'completed source changes and retained experiment artifacts'
+    when: 'distribution, tests and CAWS gates run'
+    then: 'claims cite commands and outputs, remaining proof gaps are explicit, source commits are scoped and generated artifacts remain uncommitted.'
+non_functional: {}
+contracts:
+  - name: 'hook-port-qualification'
+    type: behavior
+    path: 'docs/audits/hook-port-qualification.md'
