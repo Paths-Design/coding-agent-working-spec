@@ -272,3 +272,66 @@ test('doctor observes the effective machine runtime and identifies corruption wi
     else process.env.CAWS_HOME = previous;
   }
 });
+
+// ── SYSTEM-SURFACE-REGISTRATION-REFUSAL-LOCK-001 ────────────────────────────
+// The machine runtime makes a project's copied hook pack inert ONLY for a
+// surface CAWS has registered in that harness's native config. vendorFor admits
+// exactly codex, claude-code and qwen-code. Registering any other harness would
+// be a silent governance downgrade: systemSurfaceEnabled() would then report
+// true, `caws init` would plan NO local hook pack (init.ts:886-887), and the
+// harness would keep executing whichever copy it already had. The adapter-wired
+// DSH bridge runs <repoRoot>/.caws/hooks/dispatch/<event>.sh and has no runtime
+// path at all, so a fresh repo would end up with no guards whatsoever.
+//
+// This locks that boundary. It is a REGRESSION LOCK, not a bug fix: the refusal
+// already exists and is correct. Falsify it by widening the allowed list inside
+// vendorFor — both tests below go red.
+
+/** Sorted [relativePath, size] pairs for every file under dir. */
+function snapshotTree(dir) {
+  const out = [];
+  const walk = (current) => {
+    const entries = fs
+      .readdirSync(current, { withFileTypes: true })
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else out.push([path.relative(dir, full), fs.statSync(full).size]);
+    }
+  };
+  if (fs.existsSync(dir)) walk(dir);
+  return out;
+}
+
+test('registration REFUSES surfaces with no verified harness adapter', () => {
+  const before = snapshotTree(user);
+  // dsh is the adapter-wired harness (a cordis plugin, not native hook config);
+  // opencode and zcode have implemented PACKS but no verified native
+  // registration. All three must refuse, which is what proves the boundary is
+  // keyed to registration capability rather than special-casing dsh.
+  for (const surface of ['dsh', 'opencode', 'zcode']) {
+    expect(() => configureSystemRuntime({ ...options, surface })).toThrow(
+      /requires an adapter authored and verified in that harness/
+    );
+    // The refusal routes: it names the supported set rather than just failing.
+    expect(() => configureSystemRuntime({ ...options, surface })).toThrow(
+      /codex, claude-code, qwen-code/
+    );
+  }
+  // Nothing was written. The refusal must precede any settings mutation, or a
+  // half-registered surface could make init stop maintaining the real pack.
+  expect(snapshotTree(user)).toEqual(before);
+  for (const surface of ['dsh', 'opencode', 'zcode']) {
+    expect(fs.existsSync(path.join(home, `surfaces/${surface}`))).toBe(false);
+  }
+});
+
+test('registration still SUCCEEDS for the supported surfaces (no over-refusal)', () => {
+  for (const surface of ['codex', 'claude-code', 'qwen-code']) {
+    const surfaceUser = fs.mkdtempSync(path.join(root, `user-${surface}-`));
+    const result = configureSystemRuntime({ ...options, surface, userHome: surfaceUser });
+    expect(result.changed).toBe(true);
+    expect(fs.existsSync(path.join(home, `surfaces/${surface}`))).toBe(true);
+  }
+});

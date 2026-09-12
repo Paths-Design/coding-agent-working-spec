@@ -256,15 +256,22 @@ export const DOCTOR_RULES = {
    * growth. Absent/unreadable headers are unobserved (silent).
    *
    * HOOKPACK-COPIED-PACK-LAG-VISIBILITY-001: this rule is NOT suppressed by the
-   * presence of a machine runtime. The execution plane is PER SURFACE — the
-   * claude-code and codex native configs wire the machine launcher
-   * (`~/.caws/bin/caws-hook <surface> <event> --system`) while the DSH bridge
-   * runs `<repoRoot>/.caws/hooks/dispatch/<event>.sh` directly. Suppressing on
-   * `systemRuntime !== undefined` asserted a wiring fact doctor cannot observe
-   * (harness wiring lives outside the repo; DSH is not a runtime-configured
-   * surface at all), and its failure mode was silence about a live, old guard
-   * plane — reproduced live: runtime installed, copied pack at v56 while the CLI
-   * shipped v67, DSH executing the v56 copy, doctor silent.
+   * presence of a machine runtime. The runtime makes a repo's copied pack inert
+   * ONLY for a surface CAWS has REGISTERED in that harness's native config, and
+   * registration is deliberately narrow: system-runtime.ts vendorFor admits just
+   * codex, claude-code and qwen-code (an unregistered harness is refused, because
+   * registering one with no verified adapter would let systemSurfaceEnabled()
+   * report true while `caws init` stops maintaining the pack that harness
+   * actually executes). Every other harness keeps running the repo's own copy —
+   * the adapter-wired DSH bridge invokes
+   * <repoRoot>/.caws/hooks/dispatch/<event>.sh directly and has no runtime path
+   * at all. So `systemRuntime !== undefined` reports which surfaces are
+   * configured; it does NOT prove the harness executing against this repo is
+   * among them. Suppressing on it asserted a wiring fact doctor cannot observe,
+   * and the failure mode was silence about a live, old guard plane — reproduced
+   * live: runtime installed, copied pack at v56 while the CLI shipped v68, DSH
+   * executing the v56 copy, doctor silent. Reporting is the fail-safe direction:
+   * a false-positive advisory at worst, never silence about a live old plane.
    */
   HOOKS_INSTALLED_PACK_VERSION_LAG: 'doctor.hooks.installed_pack_version_lag',
 
