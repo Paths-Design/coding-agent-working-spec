@@ -263,6 +263,14 @@ export interface DoctorInput {
     readonly installedSharedPackVersion?: number;
     readonly shippingSharedPackVersion?: number;
     /**
+     * HOOKPACK-COPIED-PACK-LAG-VISIBILITY-001: destPaths of installed copied
+     * shared hook files whose BODY differs from the shipping template once the
+     * install-time version stamp is normalized on both sides (see
+     * observeSharedPackBodyDrift). Non-empty fires HOOKS_PACK_BODY_DRIFT;
+     * undefined or empty = unobserved/clean (silent).
+     */
+    readonly installedSharedPackBodyDrift?: readonly string[];
+    /**
      * CAWS-DEFECT-LEASE-TMP-STRANDING-01: stranded atomic-write tmp files in
      * .caws/leases/ (names + ages, observed via the atomic-write lister).
      * Optional; undefined = unobserved (silent).

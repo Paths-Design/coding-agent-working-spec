@@ -1286,22 +1286,48 @@ export function inspectProjectState(input: DoctorInput): DoctorReport {
   }
   const installedPack = input.filesystem?.installedSharedPackVersion;
   const shippingPack = input.filesystem?.shippingSharedPackVersion;
-  if (
-    systemRuntime === undefined &&
-    installedPack !== undefined &&
-    shippingPack !== undefined &&
-    installedPack < shippingPack
-  ) {
+  // HOOKPACK-COPIED-PACK-LAG-VISIBILITY-001: a machine runtime does NOT
+  // suppress this. The execution plane is per surface — claude-code/codex wire
+  // the launcher, the DSH bridge runs the repo's own dispatcher — so
+  // "systemRuntime present" cannot stand in for "the copied pack is inert".
+  // Suppressing on it made doctor silent about a live, 11-version-old guard
+  // plane in this very repo.
+  if (installedPack !== undefined && shippingPack !== undefined && installedPack < shippingPack) {
     findings.push(
       finding(
         DOCTOR_RULES.HOOKS_INSTALLED_PACK_VERSION_LAG,
         'warning',
-        `The installed CAWS shared hook pack is version ${installedPack} while the CLI ships version ${shippingPack}. The hooks enforcing this repo are runtime code the repo no longer contains — the guard plane must never silently run stale.`,
+        `The installed CAWS shared hook pack is version ${installedPack} while the CLI ships version ${shippingPack}. The hooks enforcing this repo are runtime code the repo no longer contains — the guard plane must never silently run stale. A project-wired surface (for example the DSH bridge, which runs .caws/hooks/dispatch/*.sh directly) executes THIS copy, so an installed machine runtime does not make it inert.`,
         {
           subject: '.caws/hooks',
           narrowRepair:
             'Run `caws init diff` to inspect per-file drift, then `caws init --overwrite --force` to refresh to the shipping baseline (or `--adopt` to keep local growth on specific files).',
           data: { installed_version: installedPack, shipping_version: shippingPack },
+        }
+      )
+    );
+  }
+
+  // HOOKPACK-COPIED-PACK-LAG-VISIBILITY-001: body drift is the gap the version
+  // comparison structurally cannot see — the version stamp is not a freshness
+  // proxy (manifest-shared.ts records content changes that landed without a
+  // bump). Undefined or empty observation = silent (house convention).
+  const bodyDrift = input.filesystem?.installedSharedPackBodyDrift;
+  if (bodyDrift !== undefined && bodyDrift.length > 0) {
+    const MAX_NAMED = 5;
+    const named = bodyDrift.slice(0, MAX_NAMED).join(', ');
+    const remainder =
+      bodyDrift.length > MAX_NAMED ? ` (+${bodyDrift.length - MAX_NAMED} more)` : '';
+    findings.push(
+      finding(
+        DOCTOR_RULES.HOOKS_PACK_BODY_DRIFT,
+        'warning',
+        `${bodyDrift.length} installed CAWS shared hook file(s) differ in body from the shipping template (not merely by the version stamp): ${named}${remainder}. The version header does not track content, so a matching version does not prove the copied pack matches what this CLI ships.`,
+        {
+          subject: '.caws/hooks',
+          narrowRepair:
+            'Run `caws init diff` to inspect the per-file diffs. Port upstream changes with `caws init port`, refresh wholesale with `caws init --overwrite --force`, or keep intentional local growth with `--adopt`. Nothing is overwritten automatically.',
+          data: { drift_count: bodyDrift.length, drift_paths: [...bodyDrift] },
         }
       )
     );

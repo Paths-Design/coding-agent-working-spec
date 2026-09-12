@@ -40,8 +40,18 @@ import type { StoreSnapshot } from './types';
 import { loadWaivers } from './waivers-store';
 // CAWS-TELEMETRY-REPAIR-RESILIENCE-001: import the parser from the leaf
 // module — snapshot composition must not depend on the install machinery.
+// HOOKPACK-COPIED-PACK-LAG-VISIBILITY-001 narrows that to PARSING: the pack
+// body-drift observer is imported from the install module on purpose, because
+// it is the only caller of the shared evaluateFileState classifier and
+// re-deriving the comparison here would create a second source of truth for
+// what "drift" means (the exact defect class of
+// HOOKPACK-STALENESS-VISIBILITY-001, which reported 51/51 files as drift).
+// hook-install.ts imports nothing from store/ (no cycle), and this module
+// already spawns processes, so no new failure mode is introduced. The call
+// site below is additionally guarded so a throw can never wedge doctor.
 import { parseManagedHeader } from '../init/hook-packs/managed-header';
 import { SHARED_PACK_VERSION, TELEMETRY_ROW_DEST_PATHS } from '../init/hook-packs/manifest-shared';
+import { observeSharedPackBodyDrift } from '../init/hook-install';
 import { listStrandedTmpSiblings } from './atomic-write';
 import { ADAPTER_COVERED_SURFACES } from '../init/hook-packs/types';
 import { observeSystemRuntime } from './system-runtime-observation';
@@ -323,14 +333,25 @@ function observeFilesystem(
     })(),
     // CAWS-DEFECT-STALE-INSTALLED-GUARD-PLANE-01: installed vs shipping pack
     // versions, observed from the installed rows' managed headers.
+    // HOOKPACK-COPIED-PACK-LAG-VISIBILITY-001: also observe per-file BODY
+    // drift, because the version stamp does not track content.
     ...((): {
       installedSharedPackVersion?: number;
       shippingSharedPackVersion: number;
+      installedSharedPackBodyDrift?: readonly string[];
     } => {
       const installed = observeInstalledSharedPackVersion(repoRoot);
+      let bodyDrift: readonly string[] = [];
+      try {
+        bodyDrift = observeSharedPackBodyDrift(repoRoot);
+      } catch {
+        // Fail-open: an unreadable copied pack is never a doctor failure.
+        bodyDrift = [];
+      }
       return {
         ...(installed !== undefined ? { installedSharedPackVersion: installed } : {}),
         shippingSharedPackVersion: SHARED_PACK_VERSION,
+        ...(bodyDrift.length > 0 ? { installedSharedPackBodyDrift: bodyDrift } : {}),
       };
     })(),
     // CAWS-GATED-SURFACE-SCOPE-GUARD-001: both sides of the dual-wiring

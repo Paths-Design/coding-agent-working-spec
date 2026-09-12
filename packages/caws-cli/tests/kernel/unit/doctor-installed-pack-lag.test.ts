@@ -71,12 +71,22 @@ describe('doctor.hooks.installed_pack_version_lag (CAWS-DEFECT-STALE-INSTALLED-G
     expect(rules(report)).not.toContain(DOCTOR_RULES.HOOKS_INSTALLED_PACK_VERSION_LAG);
   });
 
-  test('system runtime replaces copied pack lag with runtime and residual registration findings', () => {
+  // HOOKPACK-COPIED-PACK-LAG-VISIBILITY-001 SUPERSEDES the previous expectation
+  // here. This test used to assert that a machine runtime REPLACES copied-pack
+  // lag (the rule was gated on `systemRuntime === undefined`). That gate
+  // asserted a wiring fact doctor cannot observe: the execution plane is per
+  // surface — claude-code/codex wire the machine launcher, while the DSH bridge
+  // runs <repoRoot>/.caws/hooks/dispatch/<event>.sh directly. Reproduced live:
+  // runtime installed, copied pack at v56 vs shipping v67, DSH executing the v56
+  // copy, doctor silent. The runtime finding and the residual-registration
+  // finding are still reported; the lag is now reported WITH them instead of
+  // being hidden by them.
+  test('a system runtime does NOT replace copied pack lag — all three findings report', () => {
     const report = inspectProjectState(input(fsObs({
       installedSharedPackVersion: 1, shippingSharedPackVersion: 56,
       systemRuntime: { surfaces: ['codex'], legacySurfaces: ['claude-code'], overrides: ['codex:handlers:custom.sh'], digest: 'a'.repeat(64) },
     })));
-    expect(rules(report)).not.toContain(DOCTOR_RULES.HOOKS_INSTALLED_PACK_VERSION_LAG);
+    expect(rules(report)).toContain(DOCTOR_RULES.HOOKS_INSTALLED_PACK_VERSION_LAG);
     expect(rules(report)).toContain(DOCTOR_RULES.HOOKS_SYSTEM_RUNTIME);
     expect(rules(report)).toContain(DOCTOR_RULES.HOOKS_SYSTEM_LEGACY_WIRING);
   });

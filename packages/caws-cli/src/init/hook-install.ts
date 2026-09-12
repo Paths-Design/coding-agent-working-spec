@@ -44,7 +44,7 @@ import type {
   InstallFileState,
   ManagedHeader,
 } from './hook-packs/types';
-import { TELEMETRY_ROW_DEST_PATHS } from './hook-packs/manifest-shared';
+import { SHARED_PACK, TELEMETRY_ROW_DEST_PATHS } from './hook-packs/manifest-shared';
 
 /** Location of the pack templates relative to the caws-cli package root.
  *  Resolved at runtime from __dirname so it works both in dev (running
@@ -435,6 +435,43 @@ function evaluateFileState(
   // alone never silently clobbers an edited hook.
   // CAWS-HOOK-PACK-MANAGED-HEADER-GROWTH-DOCTRINE-001.
   return { kind: 'managed_drift', header };
+}
+
+/**
+ * HOOKPACK-COPIED-PACK-LAG-VISIBILITY-001: destPaths of installed SHARED_PACK
+ * files whose BODY differs from the shipping template with the version stamp
+ * normalized on both sides — i.e. genuine local growth OR an un-ported upstream
+ * body change, as opposed to merely an older version header.
+ *
+ * This reuses the SAME `evaluateFileState` classifier the install/diff path
+ * uses, so "drift" means one thing across the CLI. It exists because the
+ * version stamp is not a freshness proxy: `manifest-shared.ts` records content
+ * changes that landed without a version bump, so a version-equality check alone
+ * cannot prove the copied pack matches what this CLI ships.
+ *
+ * READ-ONLY: unlike the install path, nothing is written — not even pristine
+ * baselines. A file that cannot be read/classified is skipped, never fatal, so
+ * one unreadable path cannot wedge a doctor run.
+ */
+export function observeSharedPackBodyDrift(repoRoot: string): readonly string[] {
+  const packRoot = packTemplateRoot(SHARED_PACK.id);
+  const drifted: string[] = [];
+  for (const file of SHARED_PACK.installedFiles) {
+    let kind: InstallFileState['kind'];
+    try {
+      kind = evaluateFileState(
+        repoRoot,
+        packRoot,
+        SHARED_PACK.id,
+        SHARED_PACK.packVersion,
+        file
+      ).kind;
+    } catch {
+      continue;
+    }
+    if (kind === 'managed_drift') drifted.push(file.destPath);
+  }
+  return drifted.sort((a, b) => a.localeCompare(b));
 }
 
 // ─── Install ─────────────────────────────────────────────────────────────

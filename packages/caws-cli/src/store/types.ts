@@ -190,6 +190,12 @@ export interface StoreSnapshot {
     readonly systemRuntime?: SystemRuntimeObservation;
     readonly installedSharedPackVersion?: number;
     readonly shippingSharedPackVersion?: number;
+    /**
+     * HOOKPACK-COPIED-PACK-LAG-VISIBILITY-001: destPaths of copied shared hook
+     * files whose body differs from the shipping template (version stamp
+     * normalized). Absent/empty is silent.
+     */
+    readonly installedSharedPackBodyDrift?: readonly string[];
     /** CAWS-DEFECT-LEASE-TMP-STRANDING-01: stranded lease tmp files. */
     /** CAWS-DESIGN-GLOBAL-IDENTITY-HOME-001 A4: global home observation. */
     readonly globalHomeObservation?: GlobalHomeObservation;
