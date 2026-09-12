@@ -2,9 +2,10 @@ id: DANGER-LATCH-TRAP-KILL-DRYRUN-001
 title: 'Escalation dry-run: resolve and verify the kill target without signaling'
 risk_tier: 1
 mode: feature
-lifecycle_state: draft
+lifecycle_state: active
+worktree: wt-kill-dryrun
 created_at: '2026-09-12T20:57:50.747Z'
-updated_at: '2026-09-12T20:57:50.747Z'
+updated_at: '2026-09-12T20:58:18.724Z'
 created_by_session: 'session-c04418cd-a035-44a9-b26e-378d285ccad1'
 blast_radius:
   modules:
