@@ -81,3 +81,7 @@ evidence:
     status: pass
     evidence_ref: "bats 'A4' (no-heredoc input returned byte-identically) + 'A4b' (unterminated heredoc blanked to EOF, no error)"
     recorded_at: "2026-09-12T22:07:01.887Z"
+  - criterion_id: A5
+    status: pass
+    evidence_ref: "bats 'A5': a body line beginning with the delimiter (EOFX) does not close the heredoc"
+    recorded_at: "2026-09-12T22:07:02.415Z"
