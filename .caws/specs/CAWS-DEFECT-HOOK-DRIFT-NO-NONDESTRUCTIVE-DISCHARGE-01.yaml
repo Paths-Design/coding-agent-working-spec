@@ -100,3 +100,7 @@ evidence:
     status: pass
     evidence_ref: "jest tests/kernel/unit/doctor-hook-growth-classification.test.ts 'A4: a growth row with a readable baseline but unreadable template never downgrades anything' + doctor-copied-pack-lag staleRow conversions (baseline-less rows keep warning)"
     recorded_at: "2026-09-12T23:38:43.369Z"
+  - criterion_id: A5
+    status: pass
+    evidence_ref: "jest tests/kernel/unit/doctor-hook-growth-classification.test.ts 'A5: deep-frozen classified rows survive inspection unmutated'"
+    recorded_at: "2026-09-12T23:38:43.930Z"
