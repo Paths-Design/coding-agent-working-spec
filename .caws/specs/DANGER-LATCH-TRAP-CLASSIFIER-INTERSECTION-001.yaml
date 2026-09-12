@@ -56,3 +56,8 @@ contracts:
     type: 'contract-test'
     path: 'packages/caws-cli/tests/hooks/bats/block-dangerous.bats'
     description: 'Trapped: classifier-denied allowlisted commands (credential reads) and ask-class commands block with strikes naming the classifier decision; classifier-allowed allowlisted commands still admit; corpus re-run yields zero false admits.'
+evidence:
+  - criterion_id: A1
+    status: pass
+    evidence_ref: "bats INTERSECT A1 (credential reads denied, reason names classifier refusal)"
+    recorded_at: "2026-09-12T20:33:00.934Z"
