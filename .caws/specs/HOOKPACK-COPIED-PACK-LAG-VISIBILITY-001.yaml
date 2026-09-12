@@ -68,3 +68,8 @@ contracts:
     type: contract-test
     path: 'packages/caws-cli/tests/kernel/unit/doctor-copied-pack-lag.test.ts'
     description: 'Lag fires with a machine runtime present; body drift fires independently of the version stamp; both silent when matching; observation names exactly the edited stock file against a real install.'
+evidence:
+  - criterion_id: A1
+    status: pass
+    evidence_ref: "jest tests/kernel/unit/doctor-copied-pack-lag.test.ts 'A1: a machine runtime installed does NOT suppress copied-pack lag' — the superseded expectation in doctor-installed-pack-lag.test.ts fails against the new behavior (observed: rule present with systemRuntime set) and was rewritten with the falsifying evidence in its comment"
+    recorded_at: "2026-09-12T21:51:15.597Z"
