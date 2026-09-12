@@ -5,7 +5,7 @@ mode: doc
 lifecycle_state: active
 worktree: wt-hook-harvest
 created_at: '2026-09-12T23:11:16.958Z'
-updated_at: '2026-09-12T23:11:33.335Z'
+updated_at: '2026-09-12T23:27:26.421Z'
 created_by_session: '@darianrosebrook'
 blast_radius:
   modules:
@@ -16,6 +16,7 @@ scope:
   in:
     - 'docs/audits/sterling-hook-harvest.md'
     - 'scripts/hook-harvest.py'
+    - scripts/hook-harvest.test.py
   out: []
 invariants:
   - 'Sterling and installed machine hooks are read-only sources; generated inventories and third-party payloads are not committed.'
