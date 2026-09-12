@@ -4,16 +4,17 @@ risk_tier: 2
 mode: fix
 lifecycle_state: draft
 created_at: '2026-09-12T23:23:26.870Z'
-updated_at: '2026-09-12T23:23:27.731Z'
+updated_at: '2026-09-12T23:23:26.870Z'
 created_by_session: 'session-b0a97e16-4eca-4d66-9377-f5e0e7fd1777'
 blast_radius:
   modules:
-    - 'TODO: list one or more modules this spec touches.'
+    - 'packages/caws-cli/src/init/hook-install.ts — drift observer gains baseline-backed classification rows'
+    - 'packages/caws-cli/src/kernel/doctor (inspect/rules/types) — growth-vs-stale severity split + version-lag downgrade'
+    - 'packages/caws-cli/src/shell/render/init-hook-pack.ts + commands/init.ts — honest adopt no-op output'
   data_migration: false
 operational_rollback_slo: 5m
 scope:
   in:
-    - 'TODO: list the file(s) or directories this spec authorizes.'
     - packages/caws-cli/src/init/hook-install.ts
     - packages/caws-cli/src/kernel/doctor/inspect.ts
     - packages/caws-cli/src/kernel/doctor/rules.ts
@@ -28,16 +29,55 @@ scope:
     - packages/caws-cli/tests/kernel/unit/doctor-copied-pack-lag.test.ts
     - packages/caws-cli/tests/kernel/unit/doctor-installed-pack-lag.test.ts
     - packages/caws-cli/CHANGELOG.md
-  out: []
+  out:
+    - packages/caws-cli/dist
 invariants:
-  - 'TODO: describe one invariant this spec guarantees.'
+  - 'Recorded in sterling/tmp/caws_cli_defects.md (Defect 4): observeSharedPackBodyDrift flags drift on raw body comparison with no adoption exclusion, and the only discharge for doctor.hooks.pack_body_drift / installed_pack_version_lag is caws init --overwrite --force, which destroys deliberate guard growth. On sterling all 17 drifted files carry verified local growth (every file has a pristine baseline; zero are safely refreshable), so the warning class demands a remedy that would destroy the guard plane — the same no-discharge defect class as the event-orphan fix, in the destructive direction.'
+  - 'The pristine baselines the installer already writes (.caws/hooks/.pristine/<packId>/<destPath>, CAWS-HOOKPACK-UPGRADE-RETROFIT-001 A3/A4) are the authority for deliberateness: LOCAL GROWTH = installed body differs from its recorded baseline; UPSTREAM change = baseline differs from the current rendered template. A drifted file with a baseline whose installed body matches the baseline is a growth-free stale copy; a drifted file WITHOUT a baseline is unobserved. Unobserved is never downgraded (the established tombstone discipline).'
+  - 'Doctor stays pure: classification consumes caller-provided rows only; the kernel performs no I/O (frozen-input contract holds). The observer degrades per-file (a read failure skips the row classification, never crashes doctor).'
+  - 'The severity split: verified local growth renders as a NEW info rule (doctor.hooks.pack_local_growth) naming the paths, the baseline pack version, and which growth files also carry upstream changes the retrofit must port; growth-free stale copies keep the existing pack_body_drift warning naming ONLY those paths. installed_pack_version_lag downgrades to info exactly when drift rows exist and every one is growth-classified — deliberate divergence fully explains the lag; any stale row, any missing baseline, or zero drift rows keeps the warning.'
+  - 'Repair texts stop offering --adopt as a discharge: adopt resolves collisions during an install run and writes nothing persistent — it cannot advance the version stamp or silence doctor. The warning repair names refresh for stale copies; the info repairs name the retrofit (absorb growth upstream, re-init) as the reconciliation.'
+  - 'The activation-contract render never claims "Pre-tool-call governance is NOT in effect" on a run that merely installed nothing: a no-pack run states what the run did (nothing written), that any already-installed pack remains in effect unchanged, and — when --adopt was requested — that adopt only affects collision resolution during an install. Existing install/overwrite behavior is byte-unchanged.'
 acceptance:
   - id: A1
-    given: 'TODO'
-    when: 'TODO'
-    then: 'TODO'
-non_functional: {}
+    given: 'a fixture repo with an installed shared pack where one file is hand-edited after install (baseline present) and another matches its baseline but the shipping template moved'
+    when: 'observeSharedPackBodyDrift runs'
+    then: 'the edited file is a row with localGrowth=true, the template-moved file is a row with localGrowth=false and upstreamChange=true, and both carry baselinePresent=true'
+  - id: A2
+    given: 'doctor input with drift rows where at least one has baselinePresent && localGrowth'
+    when: 'inspectProjectState runs'
+    then: 'doctor.hooks.pack_local_growth fires at severity info naming exactly the growth paths, and doctor.hooks.pack_body_drift (warning) names only the non-growth rows'
+  - id: A3
+    given: 'doctor input with installed<shipping version and drift rows that are ALL growth-classified'
+    when: 'inspectProjectState runs'
+    then: 'doctor.hooks.installed_pack_version_lag fires at severity info with data carrying the growth/stale split; with any stale row, any baseline-less row, or zero drift rows it stays a warning'
+  - id: A4
+    given: 'a drift row with baselinePresent=false'
+    when: 'inspectProjectState runs'
+    then: 'the row counts as stale for both the body-drift warning and the version-lag condition — unobserved never downgrades'
+  - id: A5
+    given: 'any input, including a deep-frozen snapshot with classified rows'
+    when: 'inspectProjectState runs'
+    then: 'no I/O, no mutation, no throw'
+  - id: A6
+    given: 'a hook-pack install result with no pack (nothing selected this run) rendered with adoptRequested=true'
+    when: 'renderActivationContract runs'
+    then: 'the panel states the run wrote nothing, that an already-installed pack remains in effect, and that adopt only resolves collisions during an install — and does NOT assert governance is not in effect'
+  - id: A7
+    given: 'the sterling checkout (17 drifted files, all with baselines and verified growth)'
+    when: 'the locally built CLI runs doctor'
+    then: 'pack_body_drift warning is replaced by pack_local_growth info naming all 17, and installed_pack_version_lag renders info — warnings drop by two with zero findings suppressed that were not evidence-backed'
+non_functional:
+  reliability:
+    - 'Per-file observation failures skip that row (existing convention); a wholly unreadable pack yields an empty observation, which is silent. Classification adds two string comparisons per drifted file — no new subprocess, no new git call.'
+  security:
+    - 'Read-only observability change over installer-written baselines; no new write path, no authority change. A tampered baseline could mask growth as staleness-or-match, but baselines live under the same .caws/ governance surface as the hooks themselves and drift detection still fires on any body difference from the shipping template.'
 contracts:
   - name: 'hook-growth-classification'
     type: contract-test
     path: 'packages/caws-cli/tests/kernel/unit/doctor-hook-growth-classification.test.ts'
+    description: 'Severity split, version-lag downgrade condition, unobserved-never-downgrades, purity — over classified rows.'
+  - name: 'drift-observer-rows'
+    type: contract-test
+    path: 'packages/caws-cli/tests/init/pack-body-drift-observation.test.js'
+    description: 'Observer decomposes real installs into growth/upstream rows against baselines.'
