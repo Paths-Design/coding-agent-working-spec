@@ -281,6 +281,16 @@ export interface DoctorInput {
     readonly worktreeDirByName?: Readonly<Record<string, boolean>>;
     readonly specClaimedWorktreeDirByName?: Readonly<Record<string, boolean>>;
     /**
+     * CAWS-DEFECT-DOCTOR-NO-DISCHARGE-WARNINGS-01: for each name carried by a
+     * `worktree_created` event (latest event per name wins), whether the path
+     * the event recorded exists on disk. Used by §2e's verifiable-tombstone
+     * downgrade: an orphan whose recorded path is observed absent (and whose
+     * branch is absent, and which hosts no linked worktree) renders as INFO,
+     * not a warning nobody can discharge. A name missing from this map is
+     * UNOBSERVED — unobserved never downgrades.
+     */
+    readonly createdWorktreePathExistsByName?: Readonly<Record<string, boolean>>;
+    /**
      * Count of yaml files at the top of `.caws/specs/.archive/`
      * (excludes `.unrecoverable/` subdirectory). Retained for
      * compatibility with older snapshot writers; current doctor rules
@@ -333,6 +343,14 @@ export interface DoctorInput {
     readonly currentBranch: string;
     readonly baseBranch: string;
   };
+  /**
+   * CAWS-DEFECT-DOCTOR-NO-DISCHARGE-WARNINGS-01: local branch refs observed
+   * via `git for-each-ref --format=%(refname) refs/heads` (full ref names,
+   * e.g. `refs/heads/main`). Consumed by §2e's verifiable-tombstone
+   * downgrade to prove an event-orphan's recorded branch no longer exists.
+   * Undefined when the observation failed — unobserved never downgrades.
+   */
+  readonly localBranchRefs?: readonly string[];
 
   /**
    * Reason string when `git worktree list --porcelain` failed. Surfaced

@@ -94,6 +94,19 @@ export function composeStoreSnapshot(options: ComposeOptions): StoreSnapshot {
   // so it can distinguish "we observed the canonical path is absent"
   // from "we never observed the canonical path."
   const filesystem = observeFilesystem(repoRoot, cawsDir, worktrees, specsResult.specs);
+  // CAWS-DEFECT-DOCTOR-NO-DISCHARGE-WARNINGS-01: created-event path presence
+  // is keyed by worktree_created event data (latest event per name wins) —
+  // the store reports the filesystem fact; the kernel alone decides that a
+  // name is an orphan or a tombstone.
+  const createdWorktreePathExistsByName = observeCreatedWorktreePaths(
+    isOk(eventsResult) ? eventsResult.value.events : []
+  );
+  const filesystemWithCreatedPaths = {
+    ...filesystem,
+    ...(Object.keys(createdWorktreePathExistsByName).length > 0
+      ? { createdWorktreePathExistsByName }
+      : {}),
+  };
   const registryDiagnostics = collectRegistryDiagnostics(
     worktreesResult,
     agentsResult
@@ -105,6 +118,11 @@ export function composeStoreSnapshot(options: ComposeOptions): StoreSnapshot {
   // doctor.worktree.git_observation_unavailable and silently skips
   // H1/H6 rules. The rest of the report still runs.
   const gitObservation = observeGitWorktrees(repoRoot);
+
+  // CAWS-DEFECT-DOCTOR-NO-DISCHARGE-WARNINGS-01 — local branch refs, for the
+  // same slice's tombstone proof. Non-fatal and independent of the worktree
+  // listing: undefined on failure (unobserved, never absent).
+  const localBranchRefs = observeLocalBranchRefs(repoRoot);
 
   return {
     repoRoot,
@@ -122,11 +140,12 @@ export function composeStoreSnapshot(options: ComposeOptions): StoreSnapshot {
     waivers: waiversResult.waivers,
     waiverDiagnostics: waiversResult.diagnostics,
     initResidue,
-    filesystem,
+    filesystem: filesystemWithCreatedPaths,
     registryDiagnostics,
     ...(gitObservation.kind === 'ok'
       ? { gitWorktrees: gitObservation.entries }
       : { gitObservationFailure: gitObservation.reason }),
+    ...(localBranchRefs !== undefined ? { localBranchRefs } : {}),
   };
 }
 
@@ -509,6 +528,75 @@ function parseWorktreePorcelainLocal(text: string): GitWorktreeEntry[] {
   return entries;
 }
 
+// ----------------------------------------------------------------------------
+// CAWS-DEFECT-DOCTOR-NO-DISCHARGE-WARNINGS-01 — tombstone observations.
+//
+// Two read-only facts the kernel needs to prove a worktree event-orphan is
+// verifiably dead: which local branch refs exist, and whether the path each
+// worktree_created event recorded still exists. Both follow the established
+// keying discipline (registry-keyed / spec-claim-keyed / event-data-keyed
+// maps over pure data): the store reports facts, the kernel decides policy.
+// Both are non-fatal — undefined/absent observations never crash doctor and
+// never authorize a downgrade.
+// ----------------------------------------------------------------------------
+
+/**
+ * Local branch refs as full ref names (`refs/heads/<branch>`), observed via
+ * one `git for-each-ref` call. Undefined on any failure (unobserved).
+ */
+function observeLocalBranchRefs(repoRoot: string): readonly string[] | undefined {
+  let result;
+  try {
+    result = spawnSync(
+      resolveGitBinary(),
+      ['-C', repoRoot, 'for-each-ref', '--format=%(refname)', 'refs/heads'],
+      { encoding: 'utf8' }
+    );
+  } catch {
+    return undefined;
+  }
+  if (result.error || typeof result.status !== 'number' || result.status !== 0) {
+    return undefined;
+  }
+  const stdout = (result.stdout ?? '').toString();
+  const refs = stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('refs/heads/'));
+  return refs;
+}
+
+/**
+ * For each name carried by a `worktree_created` event (latest event per name
+ * wins — the most recent lifecycle is what "remains now" means), whether the
+ * path the event recorded exists on disk (any entry type). Events without a
+ * usable name+path are skipped; a skipped name is simply absent from the map
+ * (unobserved). Empty when the log carries no usable created events.
+ */
+function observeCreatedWorktreePaths(
+  events: readonly {
+    readonly event: string;
+    readonly data?: unknown;
+  }[]
+): Record<string, boolean> {
+  const pathsByName: Record<string, string> = {};
+  for (const ev of events) {
+    if (ev.event !== 'worktree_created') continue;
+    const d = ev.data as Record<string, unknown> | undefined;
+    const name = typeof d?.name === 'string' ? d.name : undefined;
+    const p = typeof d?.path === 'string' ? d.path : undefined;
+    if (name === undefined || name.length === 0 || p === undefined || p.length === 0) {
+      continue;
+    }
+    pathsByName[name] = p;
+  }
+  const existsByName: Record<string, boolean> = {};
+  for (const [name, p] of Object.entries(pathsByName)) {
+    existsByName[name] = fs.existsSync(p);
+  }
+  return existsByName;
+}
+
 function collectRegistryDiagnostics(
   worktreesResult: ReturnType<typeof loadWorktrees>,
   agentsResult: ReturnType<typeof loadAgents>
@@ -597,6 +685,11 @@ export function composeDoctorSnapshot(options: ComposeDoctorOptions): ComposeDoc
       : {}),
     ...(canonicalBranchObservation !== undefined
       ? { canonicalBranchObservation }
+      : {}),
+    // CAWS-DEFECT-DOCTOR-NO-DISCHARGE-WARNINGS-01: tombstone observation for
+    // §2e — undefined stays undefined (unobserved, no downgrade).
+    ...(snapshot.localBranchRefs !== undefined
+      ? { localBranchRefs: snapshot.localBranchRefs }
       : {}),
     ...(snapshot.gitObservationFailure !== undefined
       ? { gitObservationFailure: snapshot.gitObservationFailure }

@@ -206,6 +206,16 @@ export interface StoreSnapshot {
     readonly worktreeDirByName: Readonly<Record<string, boolean>>;
     readonly specClaimedWorktreeDirByName: Readonly<Record<string, boolean>>;
     /**
+     * CAWS-DEFECT-DOCTOR-NO-DISCHARGE-WARNINGS-01: for each name carried by a
+     * `worktree_created` event (latest event per name wins), whether the path
+     * the event recorded exists on disk (any entry type). Used by kernel §2e
+     * to distinguish a verifiably-dead orphan (recorded path observed absent)
+     * from one whose recorded path still hosts something. Keyed by event data,
+     * NOT by registry or spec claims — the §2e subject is by construction
+     * absent from both. A name missing from this map is UNOBSERVED, not absent.
+     */
+    readonly createdWorktreePathExistsByName?: Readonly<Record<string, boolean>>;
+    /**
      * Count of yaml files at the top of .caws/specs/.archive/.
      * Excludes .unrecoverable/ subdir. Retained for compatibility;
      * current doctor rules do not warn merely because archive bodies
@@ -222,6 +232,14 @@ export interface StoreSnapshot {
    */
   readonly gitWorktrees?: readonly GitWorktreeEntry[];
   readonly gitObservationFailure?: string;
+  /**
+   * CAWS-DEFECT-DOCTOR-NO-DISCHARGE-WARNINGS-01: local branch refs observed
+   * via `git for-each-ref --format=%(refname) refs/heads` (full ref names,
+   * e.g. `refs/heads/main`). Consumed by kernel §2e to prove a worktree
+   * event-orphan's recorded branch no longer exists. Undefined when the git
+   * call failed (unobserved — the tombstone check degrades to a warning).
+   */
+  readonly localBranchRefs?: readonly string[];
 
   /**
    * Diagnostics from worktrees.json / agents.json load failures that

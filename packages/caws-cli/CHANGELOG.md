@@ -1,3 +1,31 @@
+## [Unreleased]
+
+### Bug Fixes
+
+- **Doctor warnings with no discharge path**
+  (`CAWS-DEFECT-DOCTOR-NO-DISCHARGE-WARNINGS-01`, recorded in
+  sterling's `tmp/caws_cli_defects.md`). Two doctor findings demanded remedies
+  no governed command can perform, training operators to ignore doctor.
+
+  - **Verifiably-dead `worktree_created` event orphans downgrade to INFO.**
+    `doctor.worktree.event_without_control_plane_binding` warned forever on
+    creation events whose control-plane lifetime can never be closed
+    (destroy/prune/repair refuse the class by design; hand-forging chain
+    events is tampering). The store now observes local branch refs and the
+    recorded path of every `worktree_created` event; when an orphan's branch
+    is absent from local refs, its recorded path is absent on disk, and no
+    linked worktree is listed there, the finding renders as an informational
+    tombstone (`verified_dead: true`) instead of a warning. The predicate is
+    conjunctive: any present residue (branch, directory, un-pruned worktree
+    metadata) or any missing observation keeps the warning — unobserved is
+    never absent. No event is mutated; the audit chain stays as-is.
+  - **`~/.caws/sessions` is recognized legacy output, not unmanaged state.**
+    The `sessions` directory at the global-home root is pre-v11 machine-home
+    session-log output; the current CLI keeps session logs repo-local and
+    never writes it. `doctor.global_home.unmanaged_state` no longer warns on
+    it — a new `doctor.global_home.recognized_legacy_state` INFO finding names
+    its provenance. Entries with unknown provenance still warn.
+
 ## [12.2.0-rc.1] (2026-09-08)
 
 Release candidate for the shared machine runtime. Publishes to the `next`
