@@ -2,9 +2,10 @@ id: CAWS-HOOK-PORT-QUALIFICATION-001
 title: 'Port and falsify harvested hook governance, tenure, and logging mechanisms'
 risk_tier: 2
 mode: feature
-lifecycle_state: draft
+lifecycle_state: active
+worktree: wt-hook-qualification
 created_at: '2026-09-12T23:55:13.776Z'
-updated_at: '2026-09-12T23:55:13.776Z'
+updated_at: '2026-09-12T23:55:21.588Z'
 created_by_session: '01a097e1-0a6f-7821-80d8-dedde2ac2cd6'
 blast_radius:
   modules:
