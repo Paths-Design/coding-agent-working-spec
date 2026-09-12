@@ -1,0 +1,35 @@
+id: DANGER-LATCH-RESET-EXEMPT-ANCHOR-001
+title: 'Reset-exemption end-anchor: the trap exit admits exactly one simple reset invocation'
+risk_tier: 1
+mode: fix
+lifecycle_state: draft
+created_at: '2026-09-12T19:49:28.982Z'
+updated_at: '2026-09-12T19:49:28.982Z'
+created_by_session: 'session-c04418cd-a035-44a9-b26e-378d285ccad1'
+blast_radius:
+  modules:
+    - 'TODO: list one or more modules this spec touches.'
+  data_migration: false
+operational_rollback_slo: 5m
+scope:
+  in:
+    - 'TODO: list the file(s) or directories this spec authorizes.'
+  out: []
+invariants:
+  - 'TODO: describe one invariant this spec guarantees.'
+acceptance:
+  - id: A1
+    given: 'TODO'
+    when: 'TODO'
+    then: 'TODO'
+observability:
+  - 'Every denied reset-shaped compound is recorded as a trap strike with the sentinel and escalation audit log entries unchanged from TRAP-001.'
+rollback:
+  - 'Revert the implementation commit; the prior prefix-match semantics return; rerun the block-dangerous bats suite plus caws doctor.'
+non_functional:
+  security:
+    - 'The exemption admits one simple invocation only: benign cd/env prefixes, no command separators or substitution metacharacters in args, and nothing after the invocation (end-anchored).'
+contracts:
+  - name: 'trap-exit-admission'
+    type: contract-test
+    path: 'packages/caws-cli/tests/hooks/bats/block-dangerous.bats'
