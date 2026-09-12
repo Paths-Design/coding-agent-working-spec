@@ -44,6 +44,15 @@ const MESSAGES_LOCK_FILENAME = 'messages.jsonl.lock';
 /** A recipient lease older than this (no heartbeat) is not considered live. */
 const LIVENESS_TTL_MS = 30 * 60 * 1000; // 30m, matching the leases-store stale default
 
+/**
+ * CAWS-DEFECT-MESSAGE-PRUNE-DEAD-RECIPIENT-01: default retention floor for the
+ * undelivered-to-dead-session prune selector. A recipient whose lease is gone
+ * may still resume and renew it (observed live: sessions a081c2bf/66766069 did
+ * exactly that), so an undelivered message is only retention-eligible once it
+ * is older than this floor. 7 days, matching the specs prune-drafts default.
+ */
+const DEFAULT_DEAD_RECIPIENT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
 /** Endpoint id strict allowlist — same shape leases enforce for session ids. */
 const ENDPOINT_RE = /^[A-Za-z0-9._:-]+$/;
 
@@ -549,14 +558,31 @@ export interface MessagePruneEntry {
   readonly reason: string;
 }
 
+/**
+ * Prune selector. `delivered` is the original retention path (unchanged).
+ * `undelivered-to-dead-session` (CAWS-DEFECT-MESSAGE-PRUNE-DEAD-RECIPIENT-01)
+ * selects UNDELIVERED messages whose recipient is verifiably not live (no
+ * lease, or a heartbeat older than the TTL) and which are older than a
+ * retention floor — the monotonically-growing dead-letter class no other
+ * command could clear. Deliver-once is preserved for every recipient that
+ * could still consume: live and idle (stopped + fresh heartbeat) recipients
+ * are never selected.
+ */
+export type MessagePruneStatus = 'delivered' | 'undelivered-to-dead-session';
+
 export interface MessagePrunePlan {
-  readonly status: 'delivered';
+  readonly status: MessagePruneStatus;
   readonly apply: boolean;
   readonly candidates: readonly MessagePruneEntry[];
   readonly skipped: readonly MessagePruneEntry[];
   readonly diagnostics: ReadonlyArray<Diagnostic>;
   readonly delivery_records_to_remove: number;
   readonly selector_required_for_apply: boolean;
+  /** Present only for `undelivered-to-dead-session`: the effective retention
+   * floor applied (default DEFAULT_DEAD_RECIPIENT_RETENTION_MS unless
+   * --older-than-ms overrode it), reported so a dry-run shows what apply
+   * would use. */
+  readonly dead_recipient_floor_ms?: number;
 }
 
 export interface MessagePruneResult extends MessagePrunePlan {
@@ -748,7 +774,7 @@ function messageEntry(message: MessageRecord, delivered: boolean, state: 'candid
 }
 
 export interface MessagePruneOptions {
-  readonly status: 'delivered';
+  readonly status: MessagePruneStatus;
   readonly olderThanMs?: number;
   readonly include?: readonly string[];
   readonly exclude?: readonly string[];
@@ -767,6 +793,98 @@ function buildMessagePrunePlan(cawsDir: string, opts: MessagePruneOptions): Resu
   const now = Date.now();
   const candidates: MessagePruneEntry[] = [];
   const skipped: MessagePruneEntry[] = [];
+
+  if (opts.status === 'undelivered-to-dead-session') {
+    // CAWS-DEFECT-MESSAGE-PRUNE-DEAD-RECIPIENT-01 — see MessagePruneStatus.
+    // The floor always applies (default 7d); an explicit --older-than-ms (0
+    // allowed) overrides it. Liveness is resolved once per unique recipient,
+    // lazily, and a registry load failure fails the whole plan closed — a
+    // recipient is never guessed dead.
+    const floorMs = hasAge ? (opts.olderThanMs as number) : DEFAULT_DEAD_RECIPIENT_RETENTION_MS;
+    const livenessByRecipient = new Map<string, { live: boolean; idle: boolean }>();
+    const livenessFor = (recipient: string): Result<{ live: boolean; idle: boolean }> => {
+      const cached = livenessByRecipient.get(recipient);
+      if (cached !== undefined) return ok(cached);
+      const liveness = describeRecipientLiveness(cawsDir, recipient);
+      if (!liveness.ok) return err(liveness.errors);
+      const verdict = {
+        live: liveness.value.live,
+        idle: liveness.value.idle === true,
+      };
+      livenessByRecipient.set(recipient, verdict);
+      return ok(verdict);
+    };
+
+    for (const entry of loaded.value.lines) {
+      if (entry.parsed?.record !== 'message') continue;
+      const message = entry.parsed;
+      if (state.deliveredAt.has(message.id)) {
+        // Delivered messages belong to the delivered selector; this mode
+        // never selects them.
+        skipped.push(messageEntry(message, true, 'skipped', 'delivered'));
+        continue;
+      }
+      if (hasInclude && !include.has(message.id)) {
+        skipped.push(messageEntry(message, false, 'skipped', 'not-included'));
+        continue;
+      }
+      if (exclude.has(message.id)) {
+        skipped.push(messageEntry(message, false, 'skipped', 'excluded'));
+        continue;
+      }
+      if (state.reserved.has(message.id)) {
+        // An unexpired offer holds this message for adapter settlement —
+        // let the settlement conclude before retention touches it.
+        skipped.push(messageEntry(message, false, 'skipped', 'offer-pending'));
+        continue;
+      }
+      const ts = Date.parse(message.ts);
+      const ageMs = Number.isFinite(ts) ? now - ts : 0;
+      if (ageMs < floorMs) {
+        skipped.push(messageEntry(message, false, 'skipped', 'newer-than-floor'));
+        continue;
+      }
+      const liveness = livenessFor(message.to);
+      if (!liveness.ok) return err(liveness.errors);
+      if (liveness.value.live && !liveness.value.idle) {
+        skipped.push(messageEntry(message, false, 'skipped', 'recipient-live'));
+        continue;
+      }
+      if (liveness.value.live && liveness.value.idle) {
+        // Stopped lease + fresh heartbeat: idle between turns, deliverable.
+        skipped.push(messageEntry(message, false, 'skipped', 'recipient-idle'));
+        continue;
+      }
+      candidates.push(messageEntry(message, false, 'candidate', 'recipient-dead'));
+    }
+
+    const candidateIds = new Set(candidates.map((candidate) => candidate.id));
+    const fullyPrunedOffers = new Set(
+      [...state.offers.values()]
+        .filter((offer) => offer.deliver_ids.every((id) => candidateIds.has(id)))
+        .map((offer) => offer.offer_id)
+    );
+    const deliveryRecordsToRemove = loaded.value.lines.filter((entry) =>
+      (entry.parsed?.record === 'delivery' && candidateIds.has(entry.parsed.deliver_id)) ||
+      (entry.parsed?.record === 'offer_settlement' &&
+        entry.parsed.outcome === 'delivered' &&
+        fullyPrunedOffers.has(entry.parsed.offer_id))
+    ).length;
+
+    return ok({
+      status: opts.status,
+      apply: opts.apply === true,
+      candidates,
+      skipped,
+      diagnostics: loaded.value.diagnostics,
+      delivery_records_to_remove: deliveryRecordsToRemove,
+      // The selector IS the narrowness here: dead-recipient + floor. Apply
+      // does not additionally demand --older-than-ms/--include.
+      selector_required_for_apply: false,
+      dead_recipient_floor_ms: floorMs,
+      lines: loaded.value.lines,
+    });
+  }
 
   for (const entry of loaded.value.lines) {
     if (entry.parsed?.record !== 'message') continue;
@@ -881,8 +999,14 @@ export function pruneMessages(cawsDir: string, opts: MessagePruneOptions): Resul
     // rewriting the live ledger, so pruned history is never silently dropped.
     // The archive is telemetry, not authority — no command reads it for
     // delivery state. A retried prune re-appends (append-only log semantics).
+    // CAWS-DEFECT-MESSAGE-PRUNE-DEAD-RECIPIENT-01: the dead-recipient marker
+    // names its selector so archived dead letters are distinguishable from
+    // delivered-retention prunes; the delivered marker is byte-unchanged.
     const marker = JSON.stringify({
       record: 'prune',
+      ...(plan.status === 'undelivered-to-dead-session'
+        ? { selector: plan.status }
+        : {}),
       ids: plan.candidates.map((candidate) => candidate.id),
       ts: new Date().toISOString(),
     });

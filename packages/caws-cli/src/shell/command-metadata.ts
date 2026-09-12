@@ -1966,17 +1966,19 @@ export const MESSAGE_COMMAND_META: GroupCommandMeta = {
       kind: 'leaf',
       name: 'prune',
       description:
-        'Plan or apply retention cleanup for delivered non-authoritative chat messages. Dry-run by default; undelivered inbox messages are preserved.',
+        'Plan or apply retention cleanup for non-authoritative chat messages. Dry-run by default. --status delivered prunes delivered messages; --status undelivered-to-dead-session prunes UNDELIVERED messages whose recipient is verifiably not live (no lease, or a heartbeat older than the TTL) and which are older than a retention floor (default 7d) — every recipient that could still consume (live, or idle with a fresh heartbeat) is preserved.',
       options: [
         {
           flag: '--status <status>',
           required: true,
-          description: 'Message retention selector',
-          allowedValues: ['delivered'],
+          description:
+            'Message retention selector. A bare "undelivered" is refused on purpose: undelivered messages are prunable only with dead-recipient proof.',
+          allowedValues: ['delivered', 'undelivered-to-dead-session'],
         },
         {
           flag: '--older-than-ms <ms>',
-          description: 'Select delivered messages older than this many milliseconds',
+          description:
+            'Age threshold in milliseconds. For delivered: select messages older than this. For undelivered-to-dead-session: override the retention floor (default 604800000 = 7 days; 0 = immediate).',
         },
         {
           flag: '--include <ids>',
@@ -1988,7 +1990,7 @@ export const MESSAGE_COMMAND_META: GroupCommandMeta = {
         },
         {
           flag: '--apply',
-          description: 'Rewrite .caws/messages.jsonl to remove selected delivered messages and their delivery markers',
+          description: 'Rewrite .caws/messages.jsonl to remove selected messages (archived first to .caws/messages.jsonl.archive with a selector marker)',
         },
         { flag: '--json', description: 'Emit JSON prune plan/result' },
         DATA_OPTION,
