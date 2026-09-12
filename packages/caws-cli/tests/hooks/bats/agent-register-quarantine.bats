@@ -13,6 +13,14 @@ load helpers
 
 setup_file() {
   caws_install_pack_once
+  # Pristine copy of the installed project pack. The drift tests edit a stock
+  # handler to prove drift is detected, and the fixture is installed ONCE for the
+  # whole file — without this, a later test would inherit the earlier test's edit
+  # and see drift it never created.
+  # Exported on purpose: bats runs setup_file in a separate process, so an
+  # unexported variable never reaches the tests or the teardown hook.
+  export CAWS_PRISTINE_HOOKS="$CAWS_TEST_HOME/pristine-hooks"
+  cp -R "$CAWS_TEST_HOOKS_DIR" "$CAWS_PRISTINE_HOOKS"
 }
 teardown_file() {
   caws_teardown_pack
@@ -39,51 +47,37 @@ _run_register() {
 }
 
 # ── Pack-drift advisory (HOOKPACK-STALENESS-VISIBILITY-001) ─────────────────
-# Plant a machine runtime pointer + manifest that the SessionStart hook reads.
-# The manifest's sha256 IS the pointer digest (machine-runtime-state.readManifest
-# verifies that), so the digest is computed from the bytes actually written.
-# $1 = a manifest key to publish with an all-zero hash (the "differs" file);
-#      empty publishes every entry with its real installed hash ("all match").
-_caws_test_sha() {
-  shasum -a 256 "$1" | cut -d' ' -f1
+# Build a REAL machine runtime for the fixture home with the same installer a
+# user runs, from the same templates the project pack was installed from.
+#
+# This is load-bearing, not convenience. A hand-built fixture that hashes the
+# installed files to synthesize the "expected" manifest makes the comparison
+# tautological: the installer stamps `hook_pack_version: <cli-version>` into the
+# project copy while the runtime snapshot keeps the template literal, so EVERY
+# stock file differs by that one line, and only a fixture that goes through the
+# real installer can observe it. An earlier hand-built version of this fixture
+# hid exactly that defect and the shipped comparison reported the whole pack as
+# drift on a clean install.
+_install_runtime_fixture() {
+  run env \
+    HOME="$CAWS_TEST_HOME" \
+    CAWS_HOME="$CAWS_TEST_HOME/.caws" \
+    node "$CLI_DIST_ENTRY" init adapters install
+  assert_success
 }
 
-_plant_runtime_manifest() {
-  local mismatch="${1:-}"
-  local home="$CAWS_TEST_HOME/.caws"
-  local hooks="$CAWS_TEST_HOOKS_DIR"
-  local staging manifest digest digest_dir
-  mkdir -p "$home/state" "$home/lib/runtimes"
-  staging="$(mktemp "${TMPDIR:-/tmp}/caws-manifest-XXXXXX")"
-  node -e '
-    const fs = require("fs");
-    const crypto = require("crypto");
-    const path = require("path");
-    const [hooks, mismatch, out] = process.argv.slice(1);
-    const keys = ["block-dangerous.sh", "agent-register.sh", "reset-danger-latch.sh"];
-    const sha = (file) => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
-    const map = {};
-    for (const key of keys) {
-      map[key] = key === mismatch ? "0".repeat(64) : sha(path.join(hooks, key));
-    }
-    fs.writeFileSync(out, JSON.stringify(map));
-  ' "$hooks" "$mismatch" "$staging"
-  digest="$(_caws_test_sha "$staging")"
-  digest_dir="$home/lib/runtimes/$digest"
-  mkdir -p "$digest_dir"
-  mv "$staging" "$digest_dir/manifest.json"
-  printf '{"version":1,"digest":"%s","previous_digest":null}' "$digest" \
-    > "$home/state/adapter-runtime.json"
-}
-
-_clear_runtime_manifest() {
+_clear_runtime_fixture() {
   rm -rf "$CAWS_TEST_HOME/.caws/state/adapter-runtime.json" "$CAWS_TEST_HOME/.caws/lib/runtimes"
 }
 
-# Every drift test plants machine-home state; clear it so the "no pointer" case
-# cannot inherit a previous test's fixture (all tests share one CAWS_TEST_HOME).
+# Every drift test installs machine-home state; clear it so the "no pointer" case
+# cannot inherit a previous test's fixture (all tests share one CAWS_TEST_HOME),
+# and restore the project pack so an edited stock handler cannot leak forward.
 teardown() {
-  _clear_runtime_manifest
+  _clear_runtime_fixture
+  if [[ -n "${CAWS_PRISTINE_HOOKS:-}" && -d "$CAWS_PRISTINE_HOOKS" ]]; then
+    cp -R "$CAWS_PRISTINE_HOOKS/." "$CAWS_TEST_HOOKS_DIR/"
+  fi
 }
 
 @test "quarantine read: a trapped session id is told it is TRAPPED at session start (A9)" {
@@ -116,18 +110,19 @@ teardown() {
   rm -f "$state_dir/danger-latch-${sid}.json"
 }
 
-@test "pack drift: an installed stock file differing from the pinned runtime is named (A1)" {
+@test "pack drift: a repo-local edit to a stock handler is named, and the count is exact (A1)" {
   local sid="drift-a1-$$"
-  _plant_runtime_manifest "block-dangerous.sh"
+  _install_runtime_fixture
+  printf '\n# repo-local edit\n' >> "$CAWS_TEST_HOOKS_DIR/block-dangerous.sh"
   _run_register "$sid"
   assert_success
-  assert_output --partial 'pack drift'
+  assert_output --partial 'pack drift: 1 installed stock hook file(s)'
   assert_output --partial 'block-dangerous.sh'
 }
 
-@test "pack drift: no advisory when every installed stock file matches the runtime (A2)" {
+@test "pack drift: a clean install of the pinned runtime reports NO drift (A2)" {
   local sid="drift-a2-$$"
-  _plant_runtime_manifest ""
+  _install_runtime_fixture
   _run_register "$sid"
   assert_success
   refute_output --partial 'pack drift'
@@ -135,7 +130,7 @@ teardown() {
 
 @test "pack drift: no advisory and exit 0 with no readable runtime pointer (A3)" {
   local sid="drift-a3-$$"
-  _clear_runtime_manifest
+  _clear_runtime_fixture
   _run_register "$sid"
   assert_success
   refute_output --partial 'pack drift'
@@ -143,7 +138,8 @@ teardown() {
 
 @test "pack drift: CAWS_PACK_STALENESS_CHECK=0 silences a real drift (A4)" {
   local sid="drift-a4-$$"
-  _plant_runtime_manifest "block-dangerous.sh"
+  _install_runtime_fixture
+  printf '\n# repo-local edit\n' >> "$CAWS_TEST_HOOKS_DIR/block-dangerous.sh"
   run env \
     CAWS_PROJECT_DIR="$CAWS_TEST_REPO" \
     CAWS_AGENT_SURFACE="claude-code" \
