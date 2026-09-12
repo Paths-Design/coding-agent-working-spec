@@ -286,3 +286,230 @@ _mk_staged_deletion_repo() {
   ! { [ "$status" -eq 0 ] && [ -z "$output" ]; }
   assert_output --partial 'agent-surface.sh'
 }
+
+# --- DANGER-LATCH-QUARANTINE-TRAP-001: the armed sentinel is a TRAP ----------
+#
+# A session whose danger-latch sentinel exists is QUARANTINED: only fixed
+# read-only single commands and the reset invocation run; everything else —
+# including classifier-ALLOWED mutators (git commit, caws worktree merge) and
+# self-clear attempts on the sentinel — denies, records a strike, and (on
+# kill-enabled surfaces, identity verified) escalates to SIGTERM.
+
+_sentinel_for() {
+  printf '%s' "$CAWS_TEST_REPO/.claude/hooks/state/danger-latch-${1}.json"
+}
+
+_arm_trap() {
+  local sid="$1"
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'sudo rm -rf /private/tmp/trap-arm-probe')"
+  assert_output --partial '"decision": "block"'
+}
+
+@test "trap: read-only single commands are admitted while quarantined (A1)" {
+  local sid="trap-a1-$$"
+  _arm_trap "$sid"
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'ls -la')"
+  assert_success
+  refute_output --partial '"decision"'
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'git status')"
+  assert_success
+  refute_output --partial '"decision"'
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'cat probe-missing.txt')"
+  assert_success
+  refute_output --partial '"decision"'
+}
+
+@test "trap: classifier-allowed mutators and self-clear attempts deny, strikes recorded (A2)" {
+  local sid="trap-a2-$$"
+  local sentinel; sentinel="$(_sentinel_for "$sid")"
+  _arm_trap "$sid"
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'git commit -m chore')"
+  assert_output --partial '"decision": "block"'
+  assert_output --partial 'QUARANTINED'
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'caws worktree merge wt-x')"
+  assert_output --partial '"decision": "block"'
+  assert [ -f "$sentinel" ]
+  [ "$(jq -r '.trap_strikes // 0' "$sentinel")" = "2" ]
+  # The in-band self-clear hole is closed: rm / redirect onto the sentinel.
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" "rm $sentinel")"
+  assert_output --partial '"decision": "block"'
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" "echo '{}' > $sentinel")"
+  assert_output --partial '"decision": "block"'
+  [ "$(jq -r '.trap_strikes // 0' "$sentinel")" = "4" ]
+}
+
+@test "trap: compound / piped / substituted shapes deny even with read-only heads (A3)" {
+  local sid="trap-a3-$$"
+  _arm_trap "$sid"
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'ls; rm x')"
+  assert_output --partial '"decision": "block"'
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'cat $(rm x)')"
+  assert_output --partial '"decision": "block"'
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'cat f | sh')"
+  assert_output --partial '"decision": "block"'
+}
+
+@test "trap: caws message send/reply refused with the enlist reason (A4)" {
+  local sid="trap-a4-$$"
+  _arm_trap "$sid"
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'caws message send --to peer-1 --text help')"
+  assert_output --partial '"decision": "block"'
+  assert_output --partial 'enlist another agent'
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'caws message reply msg-1 --text ok')"
+  assert_output --partial 'enlist another agent'
+}
+
+@test "trap: read-only caws verbs admitted; mutating caws denied (A5)" {
+  local sid="trap-a5-$$"
+  _arm_trap "$sid"
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'caws status')"
+  assert_success
+  refute_output --partial '"decision"'
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'caws specs list')"
+  assert_success
+  refute_output --partial '"decision"'
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'caws specs create FEAT-9 --title x')"
+  assert_output --partial '"decision": "block"'
+}
+
+@test "trap: the reset invocation stays exempt while quarantined (A6)" {
+  local sid="trap-a6-$$"
+  _arm_trap "$sid"
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" "bash .caws/hooks/reset-danger-latch.sh --session $sid --reason probe")"
+  assert_success
+  refute_output --partial '"decision"'
+}
+
+@test "trap: a git alias shadowing an allowlisted subcommand denies (A11)" {
+  local sid="trap-a11-$$"
+  _arm_trap "$sid"
+  git -C "$CAWS_TEST_REPO" config alias.status '!echo shadow'
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'git status')"
+  local out="$output" status_code="$status"
+  git -C "$CAWS_TEST_REPO" config --unset alias.status
+  assert_output --partial '"decision": "block"'
+}
+
+# Run the guard under a sacrificial python3 "agent process" so the ancestor
+# PID walk resolves to a REAL, killable, test-owned process — the only honest
+# way to exercise the verified-kill path. The match set carries BOTH comm
+# spellings: Homebrew's python3 runs as comm "Python" (framework binary),
+# while Linux distros report "python3"/"python3.11".
+# Args: envelope files to feed the guard in order. Prints the wrapper PID.
+_run_under_sacrificial_agent() {
+  local scriptfile
+  scriptfile="$(mktemp "${TMPDIR:-/tmp}/caws-trap-agent-XXXXXX")"
+  cat > "$scriptfile" <<PYEOF
+import os, subprocess, sys
+guard, proj = sys.argv[1], sys.argv[2]
+env = dict(os.environ)
+env.update(CAWS_PROJECT_DIR=proj, CAWS_AGENT_SURFACE="claude-code",
+           CAWS_TRAP_KILL="1", CAWS_AGENT_PROCESS_NAMES="python3 python3.11 Python", HOOK_CWD=proj)
+for f in sys.argv[3:]:
+    subprocess.run(["bash", guard], input=open(f, "rb").read(), env=env)
+PYEOF
+  python3 "$scriptfile" "$CAWS_TEST_HOOKS_DIR/block-dangerous.sh" "$CAWS_TEST_REPO" "$@" >/dev/null 2>&1 &
+  printf '%s\n' $!
+}
+
+# Wait (bounded) until a sentinel file exists and carries a non-empty agent_pid
+# stamp — arm-time identity resolution is asynchronous from the caller's view.
+_wait_for_sentinel_stamp() {
+  local sentinel="$1" i
+  for i in $(seq 1 50); do
+    if [[ -f "$sentinel" ]] && [[ -n "$(jq -r '.agent_pid // ""' "$sentinel" 2>/dev/null)" ]]; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  return 1
+}
+
+@test "trap: first denied attempt while quarantined SIGTERMs the verified agent process (A7)" {
+  local sid="trap-a7-$$"
+  local sentinel; sentinel="$(_sentinel_for "$sid")"
+  local arm_env attempt_env
+  arm_env="$(mktemp "${TMPDIR:-/tmp}/caws-trap-env-XXXXXX")"
+  attempt_env="$(mktemp "${TMPDIR:-/tmp}/caws-trap-env-XXXXXX")"
+  _cmd_envelope_sid "$sid" 'sudo rm -rf /private/tmp/trap-arm-probe' > "$arm_env"
+  _cmd_envelope_sid "$sid" 'git commit -m chore' > "$attempt_env"
+  local kpid
+  kpid="$(_run_under_sacrificial_agent "$arm_env" "$attempt_env")"
+  local i
+  for i in $(seq 1 50); do
+    kill -0 "$kpid" 2>/dev/null || break
+    sleep 0.2
+  done
+  if kill -0 "$kpid" 2>/dev/null; then
+    kill -9 "$kpid" 2>/dev/null || true
+    fail "sacrificial agent process survived the denied attempt"
+  fi
+  # The wrapper can die at SIGTERM before the guard finishes writing the
+  # escalation record — poll for the record before asserting on it.
+  local escalated=""
+  local i
+  for i in $(seq 1 25); do
+    if grep -q '"verdict":"escalated"' "$CAWS_TEST_REPO/.claude/logs/danger-latch-escalations.log" 2>/dev/null; then
+      escalated=1
+      break
+    fi
+    sleep 0.2
+  done
+  if [[ -z "$escalated" ]]; then
+    fail "escalation record never appeared in the audit log"
+  fi
+  # The log + sentinel stamps are the oracle: they exist only on a FIRED kill.
+  [ "$(jq -r '.trap_escalated_pid // ""' "$sentinel")" = "$kpid" ]
+}
+
+@test "trap: unresolved agent identity holds the kill (A8)" {
+  local sid="trap-a8u-$$"
+  local sentinel; sentinel="$(_sentinel_for "$sid")"
+  _arm_trap "$sid"
+  # No python3 ancestor and no matching surface names under plain bats ->
+  # identity resolution fails -> the kill MUST be held, block still emitted.
+  run env CAWS_PROJECT_DIR="$CAWS_TEST_REPO" CAWS_AGENT_SURFACE="claude-code" \
+    CAWS_TRAP_KILL=1 CAWS_AGENT_PROCESS_NAMES="nonexistent-agent-proc" HOOK_CWD="$CAWS_TEST_REPO" \
+    bash -c "printf '%s' '$(_cmd_envelope_sid "$sid" 'git commit -m x')' | bash '$CAWS_TEST_HOOKS_DIR/block-dangerous.sh'"
+  assert_output --partial '"decision": "block"'
+  grep -q 'agent pid unresolved' "$CAWS_TEST_REPO/.claude/logs/danger-latch-escalations.log"
+  refute [ -n "$(jq -r '.trap_escalated_pid // ""' "$sentinel")" ]
+}
+
+@test "trap: kill escalation disabled for the surface holds the kill (A8)" {
+  local sid="trap-a8d-$$"
+  local sentinel; sentinel="$(_sentinel_for "$sid")"
+  _arm_trap "$sid"
+  run env CAWS_PROJECT_DIR="$CAWS_TEST_REPO" CAWS_AGENT_SURFACE="claude-code" \
+    CAWS_TRAP_KILL=0 HOOK_CWD="$CAWS_TEST_REPO" \
+    bash -c "printf '%s' '$(_cmd_envelope_sid "$sid" 'git commit -m x')' | bash '$CAWS_TEST_HOOKS_DIR/block-dangerous.sh'"
+  assert_output --partial '"decision": "block"'
+  grep -q 'kill escalation disabled' "$CAWS_TEST_REPO/.claude/logs/danger-latch-escalations.log"
+  refute [ -n "$(jq -r '.trap_escalated_pid // ""' "$sentinel")" ]
+}
+
+@test "trap: pid drift between arm and attempt holds the kill (A8)" {
+  local sid="trap-a8p-$$"
+  local sentinel; sentinel="$(_sentinel_for "$sid")"
+  local e1 e2
+  e1="$(mktemp "${TMPDIR:-/tmp}/caws-trap-env-XXXXXX")"
+  e2="$(mktemp "${TMPDIR:-/tmp}/caws-trap-env-XXXXXX")"
+  _cmd_envelope_sid "$sid" 'sudo rm -rf /private/tmp/trap-arm-probe' > "$e1"
+  _cmd_envelope_sid "$sid" 'git commit -m x' > "$e2"
+  # Arm under wrapper k1 (identity stamps k1), attempt under wrapper k2 (live
+  # resolution returns k2 != k1): natural pid drift — the armed identity no
+  # longer matches the session's live agent process, so the kill must hold.
+  local k1 k2
+  k1="$(_run_under_sacrificial_agent "$e1")"
+  _wait_for_sentinel_stamp "$sentinel" || fail "arm never stamped agent identity"
+  [ "$(jq -r '.agent_pid // ""' "$sentinel")" = "$k1" ]
+  k2="$(_run_under_sacrificial_agent "$e2")"
+  local i
+  for i in $(seq 1 50); do
+    grep -q 'pid drifted' "$CAWS_TEST_REPO/.claude/logs/danger-latch-escalations.log" 2>/dev/null && break
+    sleep 0.2
+  done
+  kill -0 "$k2" 2>/dev/null && kill -9 "$k2" 2>/dev/null
+  grep -q 'pid drifted' "$CAWS_TEST_REPO/.claude/logs/danger-latch-escalations.log"
+  refute [ -n "$(jq -r '.trap_escalated_pid // ""' "$sentinel")" ]
+}

@@ -42,6 +42,27 @@ if [[ -z "${HOOK_SESSION_ID:-}" || "$HOOK_SESSION_ID" == "unknown" ]]; then
 fi
 
 CAWS_BIN="${CAWS_BIN:-caws}"
+
+# ── Quarantine read (DANGER-LATCH-QUARANTINE-TRAP-001) ──────────────────────
+# A session id whose danger-latch sentinel still exists is QUARANTINED: a
+# restart under the same id re-enters the trap (the guard re-engages on the
+# first non-read-only Bash attempt). Report that AT SESSION START so the
+# session learns its status before burning a command — never block, never
+# kill here (a kill at start would loop with any auto-restarting harness).
+# FAIL-OPEN: any error in this read emits nothing and never blocks. Runs
+# BEFORE the CLI check below: quarantine visibility must not depend on the
+# caws binary being on PATH.
+if [[ -f "$SCRIPT_DIR/lib/caws-state.sh" ]]; then
+  # shellcheck source=lib/caws-state.sh
+  source "$SCRIPT_DIR/lib/caws-state.sh" 2>/dev/null || true
+fi
+if command -v sanitize_session >/dev/null 2>&1; then
+  _QUARANTINE_SENTINEL="${CAWS_PROJECT_DIR:-.}/${CAWS_VENDOR_DIR:-.claude}/hooks/state/danger-latch-$(sanitize_session "$HOOK_SESSION_ID").json"
+  if [[ -f "$_QUARANTINE_SENTINEL" ]]; then
+    emit_additional_context "CAWS QUARANTINE: this session id is TRAPPED — a danger-latch sentinel exists at $_QUARANTINE_SENTINEL. Only fixed read-only commands and the reset invocation run; every other Bash attempt is blocked, recorded as a strike, and (on kill-enabled surfaces) the first such attempt terminates this session's process. Do not attempt further non-read-only commands and do not enlist another agent. Ask the USER to run, from their own shell, the reset command the block message prints with --session $HOOK_SESSION_ID --reason '<why this is safe>'." 2>/dev/null || true
+  fi
+fi
+
 if ! command -v "$CAWS_BIN" >/dev/null 2>&1; then
   exit 0
 fi

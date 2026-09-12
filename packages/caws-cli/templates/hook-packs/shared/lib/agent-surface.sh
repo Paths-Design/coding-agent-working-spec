@@ -181,6 +181,9 @@ export CAWS_AGENT_SURFACE
 # ---------------------------------------------------------------------------
 # 3. Derive per-surface values.
 # ---------------------------------------------------------------------------
+# Capture an explicitly preset CAWS_AGENT_PROCESS_NAMES BEFORE the case arms
+# overwrite it (see the preserve block after the case).
+_CAWS_AGENT_PROCESS_NAMES_PRESET="${CAWS_AGENT_PROCESS_NAMES:-}"
 case "$CAWS_AGENT_SURFACE" in
   claude-code)
     CAWS_VENDOR_DIR=".claude"
@@ -292,6 +295,34 @@ case "$CAWS_AGENT_SURFACE" in
     CAWS_AGENT_PROCESS_NAMES=""
     ;;
 esac
+
+# Preserve an explicitly preset CAWS_AGENT_PROCESS_NAMES over the surface
+# default (DANGER-LATCH-QUARANTINE-TRAP-001): operators and the bats suite
+# steer ancestor-identity resolution this way. The hook env is harness-owned
+# (an agent's Bash-tool env cannot reach it), so this is an operator control,
+# not an agent-controllable kill-steer.
+if [[ -n "${_CAWS_AGENT_PROCESS_NAMES_PRESET:-}" ]]; then
+  CAWS_AGENT_PROCESS_NAMES="$_CAWS_AGENT_PROCESS_NAMES_PRESET"
+fi
+export CAWS_AGENT_PROCESS_NAMES
+
+# ---------------------------------------------------------------------------
+# 3b. DANGER-LATCH-QUARANTINE-TRAP-001: per-surface kill-escalation enablement.
+#
+# When a quarantined session makes a further non-read-only attempt, the trap
+# may terminate the session's agent process (SIGTERM) — but ONLY on surfaces
+# where one process == one session. Hosts where a single server process serves
+# many sessions/threads (DSH server, Cursor/Windsurf IDE hosts, opencode
+# server) must NOT kill: the PID names the shared host, not the offender.
+# An operator can force either way by presetting CAWS_TRAP_KILL in the env
+# (the `:-` default form keeps a preset env value authoritative).
+# ---------------------------------------------------------------------------
+case "$CAWS_AGENT_SURFACE" in
+  claude-code|codex|zcode|kimi-code|qwen-code) _CAWS_TRAP_KILL_DEFAULT=1 ;;
+  *) _CAWS_TRAP_KILL_DEFAULT=0 ;;
+esac
+: "${CAWS_TRAP_KILL:=$_CAWS_TRAP_KILL_DEFAULT}"
+export CAWS_TRAP_KILL
 
 # ---------------------------------------------------------------------------
 # 4. Derive CAWS_LOG_DIR from the resolved project dir and vendor dir.

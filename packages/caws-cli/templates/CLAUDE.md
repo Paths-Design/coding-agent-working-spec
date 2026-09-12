@@ -288,12 +288,12 @@ the `git init` bootstrap family (including flag-split variants like
 `git --bare init`). When the hook returns `block` or `ask`:
 
 1. **Stop.** Do not rephrase, wrap, reorder, or alias the command. Do not retry with `command git ...`, `env ... git ...`, `bash -lc '...'`, or `git --bare init`. The hook recognizes those variants and will block them too.
-2. The hook writes a per-session latch at `.claude/hooks/state/danger-latch-<session>.json`. **Every subsequent Bash tool call in this session will block** until a human clears the latch. The block message names which command first engaged the latch — if it is not the command you just ran, the latch is sticky from an earlier command, not a problem with the current one.
-3. **You cannot clear the latch yourself** — the reset is human-only by design. The block message prints the exact command with your session id already resolved; hand that to the user verbatim. It has the shape:
+2. The hook writes a per-session trap sentinel at `.claude/hooks/state/danger-latch-<session>.json` and the session is **QUARANTINED**. Only fixed read-only single commands run (ls, cat, head, tail, wc, pwd, echo, printf, grep, rg, diff, stat, file, jq; `git status|diff|log|show|rev-parse`; read-only `caws` verbs such as `caws status` or `caws specs list`) and the reset invocation itself. **Everything else blocks — including `git commit` and the `caws` CLI** — and each blocked attempt is recorded as a strike. On surfaces where kill escalation is enabled (per-session CLI harnesses; server-shaped hosts ship it off), the FIRST blocked attempt terminates the session's agent process with an identity-verified SIGTERM. `caws message send` / `caws message reply` are refused with a dedicated reason so a trapped session cannot enlist a peer. The block message names which command first engaged the trap — if it is not the command you just ran, the trap was set by an earlier command, not a problem with the current one.
+3. **You cannot clear the trap yourself** — the reset is human-only by design, and the reset itself fails closed: an invocation that cannot resolve the project (a machine snapshot without its env prefix, or a search that locates zero vendor state dirs) exits non-zero with the corrected command instead of reporting success while the trap stays armed. The block message prints the exact command with your session id already resolved; hand that to the user verbatim. It has the shape:
    ```bash
    bash .caws/hooks/reset-danger-latch.sh --session <id> --reason "<why this is safe>"
    ```
-   Note the two different directories: the latch **state** is vendor-scoped
+   Note the two different directories: the trap **state** is vendor-scoped
    (`.claude/hooks/state/`, per harness), but the reset **scripts** are shared
    and live in `.caws/hooks/`. Reconstructing the path from the state location
    yields a command that does not exist.

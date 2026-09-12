@@ -345,8 +345,11 @@ requires an explicit target, handlers, reason, approver and one expiry choice.
 The hook pack includes a "danger latch" that fires on certain Bash patterns
 (force-push, `reset --hard`, `rebase`, `cherry-pick`, `clean -f`, bare
 `checkout <path>`, deleted-tag pushes, pipe-to-shell, the `git init` family). If
-it fires once, **every subsequent Bash call in the session blocks** until a
-human runs the verified runtime reset helper with `--session <id> --reason
+it fires once, the session is **quarantined in a trap**: only fixed read-only
+commands and the reset itself run, every other Bash attempt blocks and is
+recorded as a strike, and on kill-enabled surfaces the first such attempt ends
+the session's process (identity-verified SIGTERM) — until a human runs the
+verified runtime reset helper with `--session <id> --reason
 "<why this is safe>"` and the canonical project root. See the recovery command
 in [the runtime guide](docs/guides/hook-packs.md#human-latch-recovery). Legacy reset scripts live under `.caws/hooks/`, not under
 the harness vendor dir (`.claude/`) — that directory holds logs and settings,
