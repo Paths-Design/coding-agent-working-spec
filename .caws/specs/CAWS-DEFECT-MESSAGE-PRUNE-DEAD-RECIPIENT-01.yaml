@@ -8,12 +8,12 @@ updated_at: '2026-09-12T22:08:28.906Z'
 created_by_session: 'session-b0a97e16-4eca-4d66-9377-f5e0e7fd1777'
 blast_radius:
   modules:
-    - 'TODO: list one or more modules this spec touches.'
+    - 'packages/caws-cli/src/store/messages-store.ts — prune plan gains the undelivered-to-dead-session selector'
+    - 'packages/caws-cli/src/shell/commands/message.ts + register.ts + command-metadata.ts — flag surface and rendering'
   data_migration: false
 operational_rollback_slo: 5m
 scope:
   in:
-    - 'TODO: list the file(s) or directories this spec authorizes.'
     - packages/caws-cli/src/store/messages-store.ts
     - packages/caws-cli/src/shell/commands/message.ts
     - packages/caws-cli/src/shell/register.ts
@@ -21,16 +21,60 @@ scope:
     - packages/caws-cli/tests/store/messages-dead-recipient-prune.test.js
     - packages/caws-cli/tests/shell/message-retention-prune.test.js
     - packages/caws-cli/CHANGELOG.md
-  out: []
+  out:
+    - packages/caws-cli/dist
 invariants:
-  - 'TODO: describe one invariant this spec guarantees.'
+  - 'Recorded in sterling/tmp/caws_cli_defects.md (Defect 2): caws status reports a monotonically growing undelivered count whose recipients are dead sessions that will never poll, and caws message prune accepts only --status delivered — there is no retention path at all for the class. The fix is a narrow selector, not a broad --status undelivered: pruning undelivered messages requires proof the recipient cannot resume to consume them.'
+  - 'Deliver-once is preserved for every session that could still consume: a recipient is prunable ONLY when describeRecipientLiveness reports not-live (no lease, or a heartbeat older than the TTL). A stopped lease with a fresh heartbeat (idle between turns) is deliverable and never pruned. A live recipient is never pruned regardless of message age.'
+  - 'Age floor bounds the resume window: a dead-recipient message is prunable only when older than a retention floor (default 7 days, matching the specs prune-drafts default; overridable with --older-than-ms, including 0 for an explicit immediate sweep). The floor used is reported in the plan output and JSON.'
+  - 'Messages reserved by an UNEXPIRED offer (adapter settlement in flight) are skipped with reason offer-pending — settlement concludes first. Delivered messages are never selected in this mode (reason delivered).'
+  - 'The rewrite is the established archive-first transaction: pruned lines plus a prune marker carrying the selector go to .caws/messages.jsonl.archive BEFORE the live ledger is rewritten under the message-log lock; a failure before the rewrite leaves the live ledger untouched. Pruned history is retained as telemetry, never silently dropped.'
+  - 'Dry-run remains the default; --apply is required to write. include/exclude are honored identically to the delivered selector (exclude protects specific ids; include narrows further). The delivered selector path is byte-for-byte unchanged in behavior and output.'
+  - 'A lease-registry load failure fails the command closed (no prune runs) rather than treating every recipient as dead.'
 acceptance:
   - id: A1
-    given: 'TODO'
-    when: 'TODO'
-    then: 'TODO'
-non_functional: {}
+    given: 'an undelivered message older than the floor whose recipient has no lease, and another whose recipient has a lease with a stale heartbeat'
+    when: 'a dead-recipient prune plan is built'
+    then: 'both messages are candidates with reason recipient-dead; the plan reports the effective floor'
+  - id: A2
+    given: 'an undelivered message whose recipient is live, and another whose lease is stopped with a fresh heartbeat (idle)'
+    when: 'a dead-recipient prune plan is built'
+    then: 'both are skipped (reasons recipient-live and recipient-idle) and never become candidates'
+  - id: A3
+    given: 'an undelivered dead-recipient message newer than the floor, and another older than it'
+    when: 'a dead-recipient prune plan is built with the default floor'
+    then: 'only the older message is a candidate; the newer is skipped with reason newer-than-floor'
+  - id: A4
+    given: 'an undelivered dead-recipient message reserved by an unexpired offer'
+    when: 'a dead-recipient prune plan is built'
+    then: 'the message is skipped with reason offer-pending'
+  - id: A5
+    given: 'candidates selected per A1'
+    when: 'the prune is applied'
+    then: 'the message lines move to the archive with a prune marker naming the selector, offers whose deliver_ids are all pruned move too, the live ledger no longer contains the pruned ids, and every preserved message/offer/delivery line is byte-identical'
+  - id: A6
+    given: 'the shell command'
+    when: 'caws message prune runs with --status undelivered-to-dead-session (dry-run, then --apply)'
+    then: 'exit 0 both times; the dry-run writes nothing; the apply reports pruned counts and the floor; --status undelivered alone is refused with a message naming the accepted values'
+  - id: A7
+    given: 'a lease-registry load failure'
+    when: 'a dead-recipient prune is planned'
+    then: 'the command fails closed with the load diagnostic and the ledger is untouched'
+  - id: A8
+    given: 'the delivered selector'
+    when: 'the existing delivered-prune behavior runs'
+    then: 'plan shape, candidate/skip reasons, refusal of apply without selector, and output lines are unchanged (existing suite passes unmodified)'
+non_functional:
+  reliability:
+    - 'Liveness is evaluated once per unique recipient per plan (not once per message), so a large backlog costs one lease-registry read plus O(recipients) map lookups; a registry failure surfaces as the closed failure of A7, never as a false dead verdict.'
+  security:
+    - 'The selector cannot be used to erase evidence: pruned content is archived with a selector-bearing marker before the ledger rewrite, and delivery markers of preserved messages are never rewritten.'
 contracts:
   - name: 'message-dead-recipient-prune'
     type: contract-test
     path: 'packages/caws-cli/tests/store/messages-dead-recipient-prune.test.js'
+    description: 'Store-level selector semantics (liveness classes, floor, offers, archive-first rewrite, closed failure) over a real ledger.'
+  - name: 'message-prune-shell-surface'
+    type: contract-test
+    path: 'packages/caws-cli/tests/shell/message-retention-prune.test.js'
+    description: 'Shell flag surface: new accepted status value, refusal of bare undelivered, dry-run default, apply output; delivered path unchanged.'
