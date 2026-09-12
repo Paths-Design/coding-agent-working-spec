@@ -97,3 +97,7 @@ evidence:
     status: pass
     evidence_ref: "jest tests/kernel/unit/doctor-half-state.test.ts 'A4: ... keeps the warning — unobserved never downgrades' (3-case matrix) + 'A4b: created-event without a recorded path'"
     recorded_at: "2026-09-12T22:07:05.200Z"
+  - criterion_id: A5
+    status: pass
+    evidence_ref: "jest tests/kernel/unit/doctor-global-home.test.ts 'A5: a home with sessions AND an unknown entry warns only on the unknown one and infos the legacy one'"
+    recorded_at: "2026-09-12T22:07:05.739Z"
