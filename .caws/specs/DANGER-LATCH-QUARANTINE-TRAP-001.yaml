@@ -133,3 +133,7 @@ evidence:
     status: pass
     evidence_ref: "bats tests/hooks/bats/block-dangerous.bats (trap suite, 29/29 green)"
     recorded_at: "2026-09-12T18:57:10.472Z"
+  - criterion_id: A8
+    status: pass
+    evidence_ref: "bats block-dangerous.bats A8 triad: unresolved/disabled/drift all hold the kill with audit lines"
+    recorded_at: "2026-09-12T18:57:10.903Z"
