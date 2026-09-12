@@ -141,3 +141,7 @@ evidence:
     status: pass
     evidence_ref: bats tests/hooks/bats/agent-register-quarantine.bats (3/3 green)
     recorded_at: "2026-09-12T18:57:11.361Z"
+  - criterion_id: A10
+    status: pass
+    evidence_ref: bats reset-danger-latch.bats fail-closed pair + jest machine-recovery/doc-drift 25/25
+    recorded_at: "2026-09-12T18:57:11.813Z"
