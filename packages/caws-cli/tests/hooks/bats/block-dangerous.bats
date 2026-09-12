@@ -589,3 +589,39 @@ _edit_env() { jq -nc --arg s "$1" --arg f "$2" '{tool_name:"Edit",tool_input:{fi
   assert_output --partial '"decision": "block"'
   grep -q "Write $CAWS_TEST_REPO/src/probe.txt" "$CAWS_TEST_REPO/.claude/logs/danger-latch-escalations.log"
 }
+
+# --- DANGER-LATCH-TRAP-CLASSIFIER-INTERSECTION-001 ---------------------------
+#
+# The allowlist is NECESSARY, not sufficient. The corpus harness over 4,759
+# real commands found the pre-fix trap admitting credential reads the
+# classifier explicitly denies; admission is now the intersection.
+
+@test "trap: allowlisted credential reads are DENIED by the intersection (INTERSECT A1)" {
+  local sid="trap-is-a1-$$"
+  local sentinel; sentinel="$(_sentinel_for "$sid")"
+  _arm_trap "$sid"
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'cat ~/.ssh/id_rsa')"
+  assert_output --partial '"decision": "block"'
+  assert_output --partial 'classifier refuses it'
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'cat /etc/passwd')"
+  assert_output --partial '"decision": "block"'
+  [ "$(jq -r '.trap_strikes // 0' "$sentinel")" = "2" ]
+}
+
+@test "trap: ask-class allowlisted commands deny while trapped (INTERSECT A2)" {
+  local sid="trap-is-a2-$$"
+  _arm_trap "$sid"
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'git')"
+  assert_output --partial '"decision": "block"'
+}
+
+@test "trap: allowlisted classifier-allow commands still admit (INTERSECT A3)" {
+  local sid="trap-is-a3-$$"
+  _arm_trap "$sid"
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'ls -la')"
+  assert_success
+  refute_output --partial '"decision"'
+  run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'git status')"
+  assert_success
+  refute_output --partial '"decision"'
+}
