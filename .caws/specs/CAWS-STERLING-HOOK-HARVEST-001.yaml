@@ -2,10 +2,11 @@ id: CAWS-STERLING-HOOK-HARVEST-001
 title: 'Harvest Sterling hook deltas into an evidence-backed CAWS adoption review'
 risk_tier: 3
 mode: doc
-lifecycle_state: active
-worktree: wt-hook-harvest
+lifecycle_state: closed
+resolution: completed
+closure_notes: 'Completed the read-only 120-path Sterling hook harvest, reproducible comparison tooling, and adoption review. Four harvest fixture checks and all five CAWS gates passed. Configured-selection gaps, guard counterexamples, consumer fidelity failure, and existing doctor findings are documented. No hook implementation, enablement, machine registration, or deployment was changed.'
 created_at: '2026-09-12T23:11:16.958Z'
-updated_at: '2026-09-12T23:27:26.421Z'
+updated_at: '2026-09-12T23:43:16.622Z'
 created_by_session: '@darianrosebrook'
 blast_radius:
   modules:
