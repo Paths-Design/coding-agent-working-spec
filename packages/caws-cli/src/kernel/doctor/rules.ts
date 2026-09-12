@@ -245,8 +245,32 @@ export const DOCTOR_RULES = {
    * Repair: `caws init diff` to inspect per-file drift, then
    * `caws init --overwrite --force` to refresh, or `--adopt` to keep local
    * growth. Absent/unreadable headers are unobserved (silent).
+   *
+   * HOOKPACK-COPIED-PACK-LAG-VISIBILITY-001: this rule is NOT suppressed by the
+   * presence of a machine runtime. The execution plane is PER SURFACE — the
+   * claude-code and codex native configs wire the machine launcher
+   * (`~/.caws/bin/caws-hook <surface> <event> --system`) while the DSH bridge
+   * runs `<repoRoot>/.caws/hooks/dispatch/<event>.sh` directly. Suppressing on
+   * `systemRuntime !== undefined` asserted a wiring fact doctor cannot observe
+   * (harness wiring lives outside the repo; DSH is not a runtime-configured
+   * surface at all), and its failure mode was silence about a live, old guard
+   * plane — reproduced live: runtime installed, copied pack at v56 while the CLI
+   * shipped v67, DSH executing the v56 copy, doctor silent.
    */
   HOOKS_INSTALLED_PACK_VERSION_LAG: 'doctor.hooks.installed_pack_version_lag',
+
+  /**
+   * HOOKPACK-COPIED-PACK-LAG-VISIBILITY-001: an installed copied shared hook
+   * file differs in BODY from the shipping template once the install-time
+   * `hook_pack_version` stamp is normalized on both sides. The version stamp is
+   * NOT a freshness proxy — manifest-shared.ts records content changes that
+   * landed without a version bump — so version equality cannot prove the copied
+   * pack matches what the CLI ships. This is the gap the version-lag rule above
+   * structurally cannot see. Severity: warning. Repair: `caws init diff` to
+   * inspect, then `caws init port` / `--overwrite --force` (refresh) or `--adopt`
+   * (keep local growth). Genuine local growth is REPORTED, never overwritten.
+   */
+  HOOKS_PACK_BODY_DRIFT: 'doctor.hooks.pack_body_drift',
 
   /**
    * CAWS-DEFECT-LEASE-TMP-STRANDING-01: stranded atomic-write tmp files in
