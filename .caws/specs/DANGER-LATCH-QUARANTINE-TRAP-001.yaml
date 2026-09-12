@@ -1,0 +1,38 @@
+id: DANGER-LATCH-QUARANTINE-TRAP-001
+title: 'Danger latch becomes quarantine trap: deny-by-default, enlist refusal, guarded PID escalation, session-start read'
+risk_tier: 1
+mode: feature
+lifecycle_state: draft
+created_at: '2026-09-12T18:23:56.215Z'
+updated_at: '2026-09-12T18:23:56.215Z'
+created_by_session: 'session-c04418cd-a035-44a9-b26e-378d285ccad1'
+blast_radius:
+  modules:
+    - 'TODO: list one or more modules this spec touches.'
+  data_migration: false
+operational_rollback_slo: 5m
+scope:
+  in:
+    - 'TODO: list the file(s) or directories this spec authorizes.'
+  out: []
+invariants:
+  - 'TODO: describe one invariant this spec guarantees.'
+acceptance:
+  - id: A1
+    given: 'TODO'
+    when: 'TODO'
+    then: 'TODO'
+observability:
+  - 'Every trap denial and escalation appends a typed record to the sentinel JSON and the vendor danger-latch log: session id, command, strike count, agent pid identity verdict, kill decision and reason.'
+rollback:
+  - 'Revert the implementation commit; the sentinel format is backward-compatible (old files lack strike/pid fields and reset to plain latch semantics); rerun the block-dangerous and reset-danger-latch bats suites plus caws doctor.'
+non_functional:
+  security:
+    - 'Kill escalation fires only on an identity-verified agent PID (pid + start-time + comm match, PID 1 and self excluded, shared-PID refused); no secrets are logged; the read-only allowlist admits single simple commands only.'
+contracts:
+  - name: 'trap-admission'
+    type: contract-test
+    path: 'packages/caws-cli/tests/hooks/bats/block-dangerous.bats'
+  - name: 'trap-release'
+    type: contract-test
+    path: 'packages/caws-cli/tests/hooks/bats/reset-danger-latch.bats'
