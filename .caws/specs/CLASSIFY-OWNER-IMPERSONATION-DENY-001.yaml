@@ -8,20 +8,42 @@ updated_at: '2026-09-12T20:43:58.876Z'
 created_by_session: 'session-c04418cd-a035-44a9-b26e-378d285ccad1'
 blast_radius:
   modules:
-    - 'TODO: list one or more modules this spec touches.'
+    - 'packages/caws-cli/templates/hook-packs/shared/classify_command.py (DENY_RAW_SEGMENT_PATTERNS + identity alternation)'
+    - 'packages/caws-cli/tests/hooks/pytest/test_classify_command.py'
   data_migration: false
-operational_rollback_slo: 5m
 scope:
   in:
-    - 'TODO: list the file(s) or directories this spec authorizes.'
-  out: []
+    - packages/caws-cli/templates/hook-packs/shared/classify_command.py
+    - packages/caws-cli/tests/hooks/pytest/test_classify_command.py
+  out:
+    - packages/caws-cli/src
+    - packages/caws-cli/dist
 invariants:
-  - 'TODO: describe one invariant this spec guarantees.'
+  - 'An authorization field (--approved-by, --revoked-by, --approver, --granted-by, --authorized-by, and the YAML keys approved_by/revoked_by/approver/authorized_by/granted_by) whose value is the machine owner''s identity is a hard deny: the approver field exists so a HUMAN owns the bypass, and an agent that writes the owner''s handle manufactures a durable false human decision that every later reader takes as real.'
+  - 'The check runs on the RAW segment, not the quote-stripped surface: the value of an authorization flag is quoted in real invocations, so a surface-only check would never see it.'
+  - 'The identity set is configurable and generic rather than owner-hardcoded: the generic "user" token, any CAWS_OWNER_IDENTITIES values (comma/space separated, additive), and the HOME-directory basename. The check is case-insensitive and requires an adjacent attribution token, so reading/auditing the field (grep for the key, cat a waiver, git log) and unrelated identities (an agent''s own session id) are unaffected.'
+  - 'The refusal is legible and routes: source=regex, reason names the impersonation class and the honest alternative (pass your own agent session id, or ask the owner to grant).'
 acceptance:
   - id: A1
-    given: 'TODO'
-    when: 'TODO'
-    then: 'TODO'
+    given: 'a command that writes the machine-owner identity into an authorization flag (--approved-by <owner>)'
+    when: 'the classifier evaluates it'
+    then: 'the decision is deny with source regex and the reason names the impersonation class'
+  - id: A2
+    given: 'a command that writes the owner identity into the YAML authorization key (approved_by: <owner>)'
+    when: 'the classifier evaluates it'
+    then: 'the decision is deny (the quoted/embedded value is seen because the check runs on the raw segment)'
+  - id: A3
+    given: 'a command whose authorization value is an agent identity or an unrelated name (--approved-by claude-agent:<sid>, --approved-by someoneelse)'
+    when: 'the classifier evaluates it'
+    then: 'the decision is allow — the check is an impersonation deny, not a general approver-flag deny'
+  - id: A4
+    given: 'a read-only command that merely mentions the authorization key (grep -rn "approved_by" .caws/waivers/)'
+    when: 'the classifier evaluates it'
+    then: 'the decision is allow — adjacency is required, so auditing is unaffected'
+  - id: A5
+    given: 'CAWS_OWNER_IDENTITIES naming additional spellings (e.g. a first name and a surname)'
+    when: 'a command attributes authorization to one of those spellings'
+    then: 'the decision is deny — the configured identities are additive to the generic and home-derived defaults'
 observability:
   - 'The deny escalates with source=regex and a reason naming the impersonation class and the honest alternative (the agent''s own session id), so the refusal routes rather than just blocks.'
 rollback:
@@ -29,7 +51,10 @@ rollback:
 non_functional:
   security:
     - 'Closes a provenance forgery class: an agent signing the machine owner''s identity into --approved-by / approved_by manufactures a durable false human decision in git. The identity alternation is env-configurable (CAWS_OWNER_IDENTITIES), defaults to the generic user token plus the home-directory basename, is adjacent-token keyed, and is case-insensitive with a word boundary so read-only auditing and unrelated identities are unaffected.'
+  reliability:
+    - 'The classifier stays pure and offline: the identity set is derived from the home argument and one environment variable, with no subprocess, no git invocation, and no filesystem read; the added check is two regex searches per segment.'
 contracts:
   - name: 'owner-impersonation-deny'
-    type: contract-test
+    type: 'contract-test'
     path: 'packages/caws-cli/tests/hooks/pytest/test_classify_command.py'
+    description: 'Owner identity in a flag or YAML authorization field denies; agent identity and unrelated names allow; read-only mentions of the key allow; configured CAWS_OWNER_IDENTITIES spellings deny.'
