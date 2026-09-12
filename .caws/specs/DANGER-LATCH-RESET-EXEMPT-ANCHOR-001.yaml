@@ -63,3 +63,7 @@ evidence:
     status: pass
     evidence_ref: bats block-dangerous.bats anchor suite (32/32 green incl. ANCHOR A2-A4)
     recorded_at: "2026-09-12T19:51:49.784Z"
+  - criterion_id: A3
+    status: pass
+    evidence_ref: bats block-dangerous.bats anchor suite (32/32 green incl. ANCHOR A2-A4)
+    recorded_at: "2026-09-12T19:51:50.354Z"
