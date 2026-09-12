@@ -2,10 +2,11 @@ id: DANGER-LATCH-TRAP-CLASSIFIER-INTERSECTION-001
 title: 'Trapped admission is the intersection: read-only allowlist AND classifier-allow'
 risk_tier: 1
 mode: fix
-lifecycle_state: active
-worktree: wt-trap-intersect
+lifecycle_state: closed
+resolution: completed
+closure_notes: 'Auto-closed by caws worktree merge wt-trap-intersect at c0e4e252b9cbc80e2237128f6012ca44b5b6ed63'
 created_at: '2026-09-12T20:27:01.712Z'
-updated_at: '2026-09-12T20:27:32.854Z'
+updated_at: '2026-09-12T20:33:06.834Z'
 created_by_session: 'session-c04418cd-a035-44a9-b26e-378d285ccad1'
 blast_radius:
   modules:
