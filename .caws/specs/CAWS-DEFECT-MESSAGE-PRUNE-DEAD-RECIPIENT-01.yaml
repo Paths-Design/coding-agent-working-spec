@@ -96,3 +96,7 @@ evidence:
     status: pass
     evidence_ref: "jest tests/store/messages-dead-recipient-prune.test.js 'A4' — unexpired offer reserves the message (offer-pending)"
     recorded_at: "2026-09-12T22:19:17.880Z"
+  - criterion_id: A5
+    status: pass
+    evidence_ref: "jest tests/store/messages-dead-recipient-prune.test.js 'A5' — apply removes exactly candidates + fully-pruned offer, preserves other lines byte-identically, archive carries selector marker; live ledger untouched on archive failure by construction (archive append precedes rewrite)"
+    recorded_at: "2026-09-12T22:19:18.398Z"
