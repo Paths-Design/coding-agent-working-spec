@@ -62,3 +62,7 @@ evidence:
     status: pass
     evidence_ref: "jest system-registration 'registration still SUCCEEDS for the supported surfaces (no over-refusal)' — all three register, changed=true"
     recorded_at: "2026-09-12T23:12:21.473Z"
+  - criterion_id: A4
+    status: pass
+    evidence_ref: "src/kernel/doctor/rules.ts HOOKS_INSTALLED_PACK_VERSION_LAG comment rewritten to state the registration boundary (vendorFor: codex/claude-code/qwen-code) instead of a per-surface execution plane; v67 reference corrected to v68"
+    recorded_at: "2026-09-12T23:12:21.989Z"
