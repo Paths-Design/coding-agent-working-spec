@@ -58,3 +58,7 @@ evidence:
     status: pass
     evidence_ref: "discriminating control: the same test file asserts configureSystemRuntime SUCCEEDS for codex/claude-code/qwen-code (result.changed true, surfaces/<x> written). A widened vendorFor list would make the refusal assertion (toThrow) fail while the success case still passed; the two tests observe opposite outcomes for the same call"
     recorded_at: "2026-09-12T23:12:20.936Z"
+  - criterion_id: A3
+    status: pass
+    evidence_ref: "jest system-registration 'registration still SUCCEEDS for the supported surfaces (no over-refusal)' — all three register, changed=true"
+    recorded_at: "2026-09-12T23:12:21.473Z"
