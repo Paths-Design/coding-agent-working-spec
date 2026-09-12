@@ -61,3 +61,7 @@ evidence:
     status: pass
     evidence_ref: "bats agent-register-quarantine.bats 'pack drift: an installed stock file differing from the pinned runtime is named (A1)' — red before the implementation, green after; falsified by an admit-all mutation (comparison replaced with always-push) which turned A1's sibling A2 red"
     recorded_at: "2026-09-12T21:20:53.434Z"
+  - criterion_id: A2
+    status: pass
+    evidence_ref: "bats agent-register-quarantine.bats 'pack drift: no advisory when every installed stock file matches the runtime (A2)' — fixture publishes every entry with its real sha256; red under the admit-all mutation"
+    recorded_at: "2026-09-12T21:20:55.344Z"
