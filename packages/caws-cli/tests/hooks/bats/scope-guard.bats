@@ -148,3 +148,31 @@ STUB
   refute_output --partial 'DIFFERENT repository'
   assert_output --partial "for 'src/f.ts'"
 }
+
+# --- CLAIM-ORACLE-DIRECTORY-CONTAINMENT-001 (shell-copy containment) ---------
+# scope-guard.sh consumes the shell-embedded matcher in lib/caws-state.sh. It
+# must answer the same matrix the oracle .cjs is pinned to by
+# tests/hooks/pytest/test_worktree_claim_oracle.py: directory entries claim
+# their subtree, the "/" boundary is respected, and an all-slash entry claims
+# nothing.
+
+_matcher_verdict() { # $1 = pattern, $2 = path -> prints "true"|"false"
+  env -i PATH="$PATH" HOOKS="$CAWS_TEST_HOOKS_DIR" PATTERN="$1" TARGET="$2" bash -c '
+    source "$HOOKS/lib/caws-state.sh" >/dev/null 2>&1
+    node -e "$CAWS_NODE_GLOB_TO_SCOPE_REGEXP
+process.stdout.write(String(globToRegExp(process.env.PATTERN).test(process.env.TARGET)))"
+  ' 2>/dev/null
+}
+
+@test "scope-glob shell copy: directory entries claim their subtree (CONTAIN A1)" {
+  [ "$(_matcher_verdict 'packages/dir/' 'packages/dir/file.py')" = "true" ]
+  [ "$(_matcher_verdict 'packages/dir' 'packages/dir/file.py')" = "true" ]
+}
+
+@test "scope-glob shell copy: the / boundary is respected (CONTAIN A2)" {
+  [ "$(_matcher_verdict 'packages/dir' 'packages/directory/file.py')" = "false" ]
+}
+
+@test "scope-glob shell copy: an all-slash entry claims nothing (CONTAIN A3)" {
+  [ "$(_matcher_verdict '/' 'packages/dir/file.py')" = "false" ]
+}
