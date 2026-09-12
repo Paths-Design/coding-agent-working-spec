@@ -64,3 +64,8 @@ contracts:
     type: contract-test
     path: 'packages/caws-cli/tests/hooks/bats/bash-write-guard-heredoc.bats'
     description: 'Body via cat/tee not read as a target; interpreter-fed body still adjudicated; sibling mutation outside the heredoc still checked; no-heredoc input returned unchanged; unterminated and prefix-delimiter cases handled.'
+evidence:
+  - criterion_id: A1
+    status: pass
+    evidence_ref: "bats 'A1' + 'A1c' (red before the fix) with 'A1b control' green in both runs — the control uses the yaml-free foreign-payload block, so it fails if the assertion goes vacuous (an earlier spec-scope-claim version of this test passed without the fix, and the control caught it)"
+    recorded_at: "2026-09-12T22:07:00.286Z"
