@@ -56,3 +56,8 @@ contracts:
     type: 'contract-test'
     path: 'packages/caws-cli/tests/hooks/bats/agent-register-quarantine.bats'
     description: 'Differing installed file -> advisory names it; all matching -> silent; missing pointer/manifest -> silent fail-open; CAWS_PACK_STALENESS_CHECK=0 -> silent.'
+evidence:
+  - criterion_id: A1
+    status: pass
+    evidence_ref: "bats agent-register-quarantine.bats 'pack drift: an installed stock file differing from the pinned runtime is named (A1)' — red before the implementation, green after; falsified by an admit-all mutation (comparison replaced with always-push) which turned A1's sibling A2 red"
+    recorded_at: "2026-09-12T21:20:53.434Z"
