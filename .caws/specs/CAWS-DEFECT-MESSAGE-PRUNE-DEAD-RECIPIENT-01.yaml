@@ -84,3 +84,7 @@ evidence:
     status: pass
     evidence_ref: "jest tests/store/messages-dead-recipient-prune.test.js 'A1' — no-lease + stale-heartbeat recipients are candidates (recipient-dead), floor 604800000 reported"
     recorded_at: "2026-09-12T22:19:16.322Z"
+  - criterion_id: A2
+    status: pass
+    evidence_ref: "jest tests/store/messages-dead-recipient-prune.test.js 'A2' — live + idle recipients skipped (recipient-live / recipient-idle), zero candidates"
+    recorded_at: "2026-09-12T22:19:16.856Z"
