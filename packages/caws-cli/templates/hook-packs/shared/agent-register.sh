@@ -67,8 +67,20 @@ fi
 # Project-local hook files SHADOW the machine runtime snapshot: a guard fix
 # shipped into the runtime never reaches a repo that carries its own copy of the
 # stock handler until someone ports it — and nothing says so. Compare the
-# installed stock files against the manifest of the runtime the pointer pins and
-# name the ones that differ.
+# installed stock files against the pinned runtime snapshot and name the
+# differing ones.
+#
+# Why normalized CONTENT and not the manifest hashes: `caws init` stamps the
+# project copy's header with the installing CLI's pack version
+# (`hook_pack_version: 67`) while the runtime snapshot keeps the template's
+# literal (`hook_pack_version: 1`). EVERY installed stock file therefore differs
+# from its manifest hash by that one line, so a hash comparison reports the
+# whole pack as drift on a clean install and is worth nothing. The version stamp
+# is the only install-time rewrite (measured exhaustively: 50/50 present stock
+# files differ by that line and nothing else), and it is neutralized on BOTH
+# sides with the normalizer the CLI itself uses for the same comparison in
+# src/init/system-runtime.ts. A genuine repo-local edit survives it and is
+# reported.
 #
 # READ-ONLY + FAIL-OPEN: reads the runtime pointer, its manifest and the
 # installed files, emits at most one bounded context line, and emits NOTHING
@@ -90,26 +102,31 @@ if [[ "${CAWS_PACK_STALENESS_CHECK:-1}" != "0" ]] && command -v node >/dev/null 
       const hooks = process.env.CAWS_PACK_DRIFT_HOOKS_DIR || "";
       if (!home || !hooks) process.exit(0);
       const sha = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
+      const normalize = (text) =>
+        text.replace(/hook_pack_version:\s*\d+/g, "hook_pack_version: N");
       let pointer;
       try {
         pointer = JSON.parse(fs.readFileSync(path.join(home, "state/adapter-runtime.json"), "utf8"));
       } catch { process.exit(0); }
       if (!pointer || !HEX.test(pointer.digest || "")) process.exit(0);
+      const snapshot = path.join(home, "lib/runtimes", pointer.digest);
       let raw;
-      try {
-        raw = fs.readFileSync(path.join(home, "lib/runtimes", pointer.digest, "manifest.json"), "utf8");
-      } catch { process.exit(0); }
+      try { raw = fs.readFileSync(path.join(snapshot, "manifest.json"), "utf8"); } catch { process.exit(0); }
       if (sha(raw) !== pointer.digest) process.exit(0);
       let manifest;
       try { manifest = JSON.parse(raw); } catch { process.exit(0); }
       if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) process.exit(0);
       const drift = [];
-      for (const [relative, expected] of Object.entries(manifest)) {
-        if (!HEX.test(expected || "")) continue;
+      for (const relative of Object.keys(manifest)) {
         if (relative.split("/").includes("..")) continue;
         let installed;
         try { installed = fs.readFileSync(path.join(hooks, relative)); } catch { continue; }
-        if (sha(installed) !== expected) drift.push(relative);
+        let pinned;
+        try { pinned = fs.readFileSync(path.join(snapshot, relative)); } catch { continue; }
+        if (installed.equals(pinned)) continue;
+        if (installed.includes(0) || pinned.includes(0)) { drift.push(relative); continue; }
+        if (normalize(installed.toString("utf8")) !== normalize(pinned.toString("utf8")))
+          drift.push(relative);
       }
       if (drift.length === 0) process.exit(0);
       const MAX = 5;
