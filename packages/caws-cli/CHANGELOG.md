@@ -2,6 +2,22 @@
 
 ### Bug Fixes
 
+- **Undelivered messages to dead sessions gain a retention path**
+  (`CAWS-DEFECT-MESSAGE-PRUNE-DEAD-RECIPIENT-01`, recorded in sterling's
+  `tmp/caws_cli_defects.md`). `caws message prune` accepted only
+  `--status delivered`, so undelivered messages addressed to sessions that
+  will never poll accumulated permanently (observed: 48 undelivered, oldest
+  77 days). A new `--status undelivered-to-dead-session` selector prunes
+  UNDELIVERED messages whose recipient is verifiably not live (no lease, or a
+  heartbeat older than the TTL) and which are older than a retention floor
+  (default 7 days; `--older-than-ms` overrides, `0` for an immediate sweep).
+  Deliver-once holds for every recipient that could still consume: live and
+  idle (stopped lease + fresh heartbeat) recipients are never selected, and
+  messages reserved by an unexpired offer wait for settlement. The rewrite is
+  the established archive-first transaction — pruned lines plus a
+  selector-bearing marker land in `.caws/messages.jsonl.archive` before the
+  live ledger is touched. A bare `--status undelivered` stays refused.
+
 - **Doctor warnings with no discharge path**
   (`CAWS-DEFECT-DOCTOR-NO-DISCHARGE-WARNINGS-01`, recorded in
   sterling's `tmp/caws_cli_defects.md`). Two doctor findings demanded remedies
