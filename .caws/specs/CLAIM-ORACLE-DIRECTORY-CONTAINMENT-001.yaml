@@ -73,3 +73,7 @@ evidence:
     status: pass
     evidence_ref: pytest test_worktree_claim_oracle.py containment (10/10) + bats scope-guard CONTAIN A1-A3
     recorded_at: "2026-09-12T20:42:19.091Z"
+  - criterion_id: A4
+    status: pass
+    evidence_ref: "bats scope-guard shell-copy parity matrix (CONTAIN A1-A3) + full-tree 258/258 bats, 132/132 pytest"
+    recorded_at: "2026-09-12T20:42:20.139Z"
