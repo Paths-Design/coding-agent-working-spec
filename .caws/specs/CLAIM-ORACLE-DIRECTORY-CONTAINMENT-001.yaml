@@ -2,9 +2,10 @@ id: CLAIM-ORACLE-DIRECTORY-CONTAINMENT-001
 title: 'Scope-glob directory containment: a directory entry claims (and excludes) its whole subtree'
 risk_tier: 1
 mode: fix
-lifecycle_state: draft
+lifecycle_state: active
+worktree: wt-oracle-contain
 created_at: '2026-09-12T20:35:00.352Z'
-updated_at: '2026-09-12T20:35:00.352Z'
+updated_at: '2026-09-12T20:35:26.886Z'
 created_by_session: 'session-c04418cd-a035-44a9-b26e-378d285ccad1'
 blast_radius:
   modules:
