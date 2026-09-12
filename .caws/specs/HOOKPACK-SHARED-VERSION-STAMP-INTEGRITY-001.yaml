@@ -50,3 +50,7 @@ evidence:
     status: pass
     evidence_ref: "jest tests/init/pack-fingerprint.test.js 'shared pack fingerprint is unchanged (or version bumped)' — red before (recorded version 67 vs drifted live fingerprint), green after re-deriving the baseline at version 68"
     recorded_at: "2026-09-12T22:20:18.710Z"
+  - criterion_id: A2
+    status: pass
+    evidence_ref: "jest pack-fingerprint 14/14: all eight pack cases pass; only the shared entry in pack-fingerprints.json changed (git diff touches 2 files)"
+    recorded_at: "2026-09-12T22:20:19.231Z"
