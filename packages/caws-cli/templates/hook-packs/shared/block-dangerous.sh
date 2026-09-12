@@ -380,7 +380,12 @@ trap_escalate() {
   if (( strikes < threshold )); then
     return 0
   fi
-  if [[ "${CAWS_TRAP_KILL:-0}" != "1" ]]; then
+  # DANGER-LATCH-TRAP-KILL-DRYRUN-001: dryrun runs the whole verification path
+  # and stops at the signal boundary, so an operator can confirm the resolved
+  # target on a surface before enabling a real kill there. It is neither
+  # "disabled" (held) nor "enabled" (signal).
+  local kill_mode="${CAWS_TRAP_KILL:-0}"
+  if [[ "$kill_mode" != "1" && "$kill_mode" != "dryrun" ]]; then
     trap_log_event "$session_id" "held" "no-kill" "kill escalation disabled for surface ${CAWS_AGENT_SURFACE:-unknown} (shared-process host or unset)" "$command"
     return 0
   fi
@@ -415,6 +420,16 @@ trap_escalate() {
   fi
   if [[ -n "$rec_comm" && -n "$comm" && "$rec_comm" != "$comm" ]]; then
     trap_log_event "$session_id" "held" "no-kill" "comm mismatch: armed=$rec_comm live=$comm" "$command"
+    return 0
+  fi
+  if [[ "$kill_mode" == "dryrun" ]]; then
+    # Identity verified by the same checks above; stop before signaling and
+    # leave durable evidence of what WOULD have been terminated.
+    trap_log_event "$session_id" "dryrun" "no-signal" "kill target verified: pid=$pid comm=${comm:-unknown} start=${start:-unknown} after strike $strikes — dry run, no signal sent" "$command"
+    local _dtmp="${latch_file}.dry.$$"
+    jq --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg pid "$pid" \
+       '.trap_dryrun_at = $ts | .trap_dryrun_pid = $pid' \
+       "$latch_file" > "$_dtmp" 2>/dev/null && mv "$_dtmp" "$latch_file" || rm -f "$_dtmp" 2>/dev/null || true
     return 0
   fi
   if kill -TERM "$pid" 2>/dev/null; then

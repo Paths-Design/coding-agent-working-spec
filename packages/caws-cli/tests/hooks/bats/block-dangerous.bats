@@ -395,8 +395,10 @@ _arm_trap() {
 # way to exercise the verified-kill path. The match set carries BOTH comm
 # spellings: Homebrew's python3 runs as comm "Python" (framework binary),
 # while Linux distros report "python3"/"python3.11".
-# Args: envelope files to feed the guard in order. Prints the wrapper PID.
+# Args: kill mode (1 | dryrun | 0), then envelope files to feed the guard in
+# order. Prints the wrapper PID.
 _run_under_sacrificial_agent() {
+  local mode="$1"; shift
   local scriptfile
   scriptfile="$(mktemp "${TMPDIR:-/tmp}/caws-trap-agent-XXXXXX")"
   cat > "$scriptfile" <<PYEOF
@@ -404,7 +406,7 @@ import os, subprocess, sys
 guard, proj = sys.argv[1], sys.argv[2]
 env = dict(os.environ)
 env.update(CAWS_PROJECT_DIR=proj, CAWS_AGENT_SURFACE="claude-code",
-           CAWS_TRAP_KILL="1", CAWS_AGENT_PROCESS_NAMES="python3 python3.11 Python", HOOK_CWD=proj)
+           CAWS_TRAP_KILL="$mode", CAWS_AGENT_PROCESS_NAMES="python3 python3.11 Python", HOOK_CWD=proj)
 for f in sys.argv[3:]:
     subprocess.run(["bash", guard], input=open(f, "rb").read(), env=env)
 PYEOF
@@ -434,7 +436,7 @@ _wait_for_sentinel_stamp() {
   _cmd_envelope_sid "$sid" 'sudo rm -rf /private/tmp/trap-arm-probe' > "$arm_env"
   _cmd_envelope_sid "$sid" 'git commit -m chore' > "$attempt_env"
   local kpid
-  kpid="$(_run_under_sacrificial_agent "$arm_env" "$attempt_env")"
+  kpid="$(_run_under_sacrificial_agent "1" "$arm_env" "$attempt_env")"
   local i
   for i in $(seq 1 50); do
     kill -0 "$kpid" 2>/dev/null || break
@@ -500,10 +502,10 @@ _wait_for_sentinel_stamp() {
   # resolution returns k2 != k1): natural pid drift — the armed identity no
   # longer matches the session's live agent process, so the kill must hold.
   local k1 k2
-  k1="$(_run_under_sacrificial_agent "$e1")"
+  k1="$(_run_under_sacrificial_agent "1" "$e1")"
   _wait_for_sentinel_stamp "$sentinel" || fail "arm never stamped agent identity"
   [ "$(jq -r '.agent_pid // ""' "$sentinel")" = "$k1" ]
-  k2="$(_run_under_sacrificial_agent "$e2")"
+  k2="$(_run_under_sacrificial_agent "1" "$e2")"
   local i
   for i in $(seq 1 50); do
     grep -q 'pid drifted' "$CAWS_TEST_REPO/.claude/logs/danger-latch-escalations.log" 2>/dev/null && break
@@ -624,4 +626,41 @@ _edit_env() { jq -nc --arg s "$1" --arg f "$2" '{tool_name:"Edit",tool_input:{fi
   run_guard block-dangerous.sh "$(_cmd_envelope_sid "$sid" 'git status')"
   assert_success
   refute_output --partial '"decision"'
+}
+
+# --- DANGER-LATCH-TRAP-KILL-DRYRUN-001 ---------------------------------------
+# Dry run exercises the whole escalation verification and stops at the signal
+# boundary, so an operator can confirm the resolved target before enabling kill.
+
+@test "trap: dry-run verifies the kill target and does NOT signal (DRYRUN A1)" {
+  local sid="trap-dry-a1-$$"
+  local sentinel; sentinel="$(_sentinel_for "$sid")"
+  local arm_env attempt_env
+  arm_env="$(mktemp "${TMPDIR:-/tmp}/caws-trap-env-XXXXXX")"
+  attempt_env="$(mktemp "${TMPDIR:-/tmp}/caws-trap-env-XXXXXX")"
+  _cmd_envelope_sid "$sid" 'sudo rm -rf /private/tmp/trap-arm-probe' > "$arm_env"
+  _cmd_envelope_sid "$sid" 'git commit -m chore' > "$attempt_env"
+  local kpid
+  kpid="$(_run_under_sacrificial_agent "dryrun" "$arm_env" "$attempt_env")"
+  local i
+  for i in $(seq 1 50); do
+    grep -q '"verdict":"dryrun"' "$CAWS_TEST_REPO/.claude/logs/danger-latch-escalations.log" 2>/dev/null && break
+    sleep 0.2
+  done
+  [ "$(jq -r '.trap_dryrun_pid // ""' "$sentinel")" = "$kpid" ]
+  [ "$(jq -r '.trap_escalated_pid // ""' "$sentinel")" = "" ]
+  grep -q '"verdict":"dryrun"' "$CAWS_TEST_REPO/.claude/logs/danger-latch-escalations.log"
+  kill -0 "$kpid" 2>/dev/null && kill -9 "$kpid" 2>/dev/null || true
+}
+
+@test "trap: dry-run holds with the real reason when identity is unresolvable (DRYRUN A2)" {
+  local sid="trap-dry-a2-$$"
+  local sentinel; sentinel="$(_sentinel_for "$sid")"
+  _arm_trap "$sid"
+  run env CAWS_PROJECT_DIR="$CAWS_TEST_REPO" CAWS_AGENT_SURFACE="claude-code" \
+    CAWS_TRAP_KILL=dryrun CAWS_AGENT_PROCESS_NAMES="nonexistent-agent-proc" HOOK_CWD="$CAWS_TEST_REPO" \
+    bash -c "printf '%s' '$(_cmd_envelope_sid "$sid" 'git commit -m x')' | bash '$CAWS_TEST_HOOKS_DIR/block-dangerous.sh'"
+  assert_output --partial '"decision": "block"'
+  grep -q 'agent pid unresolved' "$CAWS_TEST_REPO/.claude/logs/danger-latch-escalations.log"
+  [ "$(jq -r '.trap_dryrun_pid // ""' "$sentinel")" = "" ]
 }
