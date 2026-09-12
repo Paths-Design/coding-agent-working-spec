@@ -137,3 +137,7 @@ evidence:
     status: pass
     evidence_ref: "bats block-dangerous.bats A8 triad: unresolved/disabled/drift all hold the kill with audit lines"
     recorded_at: "2026-09-12T18:57:10.903Z"
+  - criterion_id: A9
+    status: pass
+    evidence_ref: bats tests/hooks/bats/agent-register-quarantine.bats (3/3 green)
+    recorded_at: "2026-09-12T18:57:11.361Z"
