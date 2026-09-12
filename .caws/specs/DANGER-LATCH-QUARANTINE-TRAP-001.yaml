@@ -105,3 +105,7 @@ evidence:
     status: pass
     evidence_ref: "bats tests/hooks/bats/block-dangerous.bats (trap suite, 29/29 green)"
     recorded_at: "2026-09-12T18:57:06.687Z"
+  - criterion_id: A2
+    status: pass
+    evidence_ref: "bats tests/hooks/bats/block-dangerous.bats (trap suite, 29/29 green)"
+    recorded_at: "2026-09-12T18:57:07.285Z"
