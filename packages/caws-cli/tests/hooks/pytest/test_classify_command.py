@@ -528,3 +528,70 @@ class TestDecisionMatrixArtifact:
 
         # The matrix exercises all three decision classes (not all-allow / all-deny).
         assert seen["allow"] >= 1 and seen["ask"] >= 1 and seen["deny"] >= 1, seen
+
+
+# --- Entry-40: owner-identity impersonation in an authorization field --------
+# An approver/revoker field on a bounded exception exists so a HUMAN owns the
+# bypass. An agent that writes the machine owner's identity into it manufactures
+# a durable false human decision: it lands in git and every later reader takes
+# it for a real grant. Nothing else catches this — the path guards fire on rm/mv
+# of the waiver file, and no guard reads the SEMANTICS of an identity value.
+
+import tempfile
+from pathlib import Path
+
+import classify_command as cc
+
+
+def _classify_with_home(raw_command, home_name):
+    """Classify with a home directory whose basename is a known owner token."""
+    tmp = Path(tempfile.mkdtemp(prefix="caws-e40-"))
+    repo = tmp / "repo"
+    home = tmp / home_name
+    repo.mkdir(parents=True)
+    home.mkdir(parents=True)
+    return cc.classify_command(
+        raw_command, repo_root=repo, home=home, cwd=repo
+    )
+
+
+def test_authorization_flag_with_machine_owner_identity_is_denied():
+    result = _classify_with_home(
+        "caws waiver create WV-1 --approved-by ownerperson --reason x",
+        "ownerperson",
+    )
+    assert decision_of(result) == "deny", result
+    assert result[2] == "regex", result
+    assert "owner" in result[1].lower(), result
+
+
+def test_authorization_yaml_key_with_machine_owner_identity_is_denied():
+    result = _classify_with_home(
+        "printf 'approved_by: ownerperson' > .caws/waivers/WV-1.yaml",
+        "ownerperson",
+    )
+    assert decision_of(result) == "deny", result
+
+
+def test_authorization_flag_with_agent_identity_is_allowed(classify):
+    result = classify("caws waiver create WV-1 --approved-by claude-agent:sess-1")
+    assert decision_of(result) == "allow", result
+
+
+def test_authorization_flag_with_unrelated_identity_is_allowed(classify):
+    result = classify("caws waiver create WV-1 --approved-by someoneelse")
+    assert decision_of(result) == "allow", result
+
+
+def test_reading_the_authorization_key_is_allowed(classify):
+    result = classify('grep -rn "approved_by" .caws/waivers/')
+    assert decision_of(result) == "allow", result
+
+
+def test_configured_owner_identities_are_additive(monkeypatch, classify):
+    monkeypatch.setenv("CAWS_OWNER_IDENTITIES", "darian,rosebrook")
+    result = classify(
+        'caws reprieve grant --handlers x --approved-by "darian" '
+        "--reason y --expires-at 2030-01-01T00:00:00Z"
+    )
+    assert decision_of(result) == "deny", result

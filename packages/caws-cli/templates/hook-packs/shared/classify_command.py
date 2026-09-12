@@ -201,6 +201,66 @@ DENY_SEGMENT_PATTERNS: list[tuple[str, str]] = [
      "naked rm/mv on .caws/waivers/*.yaml — use `caws waiver revoke <id>`"),
 ]
 
+# Segment-level deny patterns that must see the RAW segment (argument values).
+#
+# CLASSIFY-OWNER-IMPERSONATION-DENY-001 (failure-lineage Entry 40, doctrine
+# documented but previously unimplemented). An approver/revoker field on a
+# bounded exception exists so a HUMAN owns the bypass; an agent that self-grants
+# and writes the machine owner's identity into that field removes the only thing
+# the field is for, and the claim is durable — it lands in git and every later
+# reader takes it for a real human decision. Nothing else catches this: the path
+# guards fire on rm/mv of the waiver file, and no guard reads the SEMANTICS of
+# an identity value.
+#
+# These read ARGUMENT VALUES, which are quoted in real invocations, so they must
+# run against `segment`, NOT the quote-stripped `segment_surface` — the quoting
+# is exactly what makes this class invisible to surface-level checks.
+#
+# The identity alternation is built per call by _owner_identity_alternation():
+# the generic "user" token, additive CAWS_OWNER_IDENTITIES values, and the
+# home-directory basename (the human who owns this machine). Keying on an
+# ADJACENT attribution token rather than the handle alone keeps read-only
+# auditing (grep for the key, cat a waiver, git log) admissible; only the act of
+# ATTRIBUTING authorization trips. Known false positive: writing a literal
+# approver-key-plus-handle string in a grep or a commit message — grep the key
+# alone instead.
+DENY_RAW_SEGMENT_PATTERNS: list[tuple[str, str]] = [
+    (
+        r"(?i)--(approved-by|revoked-by|approver|granted-by|authorized-by)"
+        r"[=\s]+['\"]?[^\s'\"]*?@?(?:{OWNER})\b",
+        "agent signing the machine owner's identity into an authorization flag — "
+        "an approver field means a HUMAN owned the bypass; pass your agent "
+        "session id (claude-agent:<session-id>), or ask the owner to grant it",
+    ),
+    (
+        r"(?i)\b(approved_by|revoked_by|approver|authorized_by|granted_by)"
+        r"\s*:\s*['\"]?[^\s'\"]*?@?(?:{OWNER})\b",
+        "agent writing the machine owner's identity into an authorization field — "
+        "an approver field means a HUMAN owned the bypass; write your agent "
+        "session id (claude-agent:<session-id>), or ask the owner to grant it",
+    ),
+]
+
+
+def _owner_identity_alternation(home: Path | None) -> str:
+    """Regex alternation of spellings meaning 'the human who owns this machine'.
+
+    Deliberately generic rather than owner-hardcoded: the generic "user" token,
+    any CAWS_OWNER_IDENTITIES values (comma/space separated, additive so a
+    configured alias never weakens the defaults), and the home-directory
+    basename. Pure and offline: no subprocess, no git, no filesystem read.
+    """
+    tokens = ["user"]
+    for token in re.split(r"[,\s]+", os.environ.get("CAWS_OWNER_IDENTITIES", "")):
+        if token and token not in tokens:
+            tokens.append(token)
+    if home is not None:
+        base = Path(home).name
+        if base and base not in tokens:
+            tokens.append(base)
+    return "|".join(re.escape(token) for token in tokens)
+
+
 # Segment-level regex patterns that require user confirmation (ask).
 #
 # CAWS-DANGER-LATCH-CATASTROPHIC-ONLY-001: ask-class commands are now ALLOWED
@@ -2830,6 +2890,16 @@ def classify_command(
         # --- Hard-block patterns (segment-level) ---
         for pattern, desc in DENY_SEGMENT_PATTERNS:
             if re.search(pattern, segment_surface, re.IGNORECASE):
+                escalate("deny", desc, "regex")
+
+        # --- Hard-block patterns over RAW argument values (Entry 40) ---
+        # CLASSIFY-OWNER-IMPERSONATION-DENY-001: authorization values are quoted
+        # in real invocations, so these must see `segment`, not the stripped
+        # surface. Owner spellings come from the home basename plus the
+        # additive CAWS_OWNER_IDENTITIES configuration.
+        _owner_alt = _owner_identity_alternation(home)
+        for pattern, desc in DENY_RAW_SEGMENT_PATTERNS:
+            if re.search(pattern.replace("{OWNER}", _owner_alt), segment, re.IGNORECASE):
                 escalate("deny", desc, "regex")
 
         # --- Confirm patterns (segment-level) ---
