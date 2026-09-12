@@ -80,3 +80,8 @@ contracts:
     type: contract-test
     path: 'packages/caws-cli/tests/kernel/unit/doctor-global-home.test.ts'
     description: 'Recognized legacy entries render as info and leave the unmanaged warning to truly unknown entries only.'
+evidence:
+  - criterion_id: A1
+    status: pass
+    evidence_ref: "jest tests/kernel/unit/doctor-half-state.test.ts 'A1: verifiably-dead orphan downgrades to info with verified_dead evidence' — severity info, verified_dead true, summary.warnings 0 / infos 1, repair names no command"
+    recorded_at: "2026-09-12T22:07:03.595Z"
