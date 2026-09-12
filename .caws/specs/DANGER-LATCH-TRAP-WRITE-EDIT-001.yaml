@@ -73,3 +73,7 @@ evidence:
     status: pass
     evidence_ref: bats block-dangerous.bats WRITE-EDIT A1-A3 + full-tree 252/252 green
     recorded_at: "2026-09-12T20:09:00.932Z"
+  - criterion_id: A4
+    status: pass
+    evidence_ref: bats block-dangerous.bats WRITE-EDIT A1-A3 + full-tree 252/252 green
+    recorded_at: "2026-09-12T20:09:01.545Z"
