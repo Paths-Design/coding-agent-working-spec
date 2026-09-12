@@ -85,3 +85,7 @@ evidence:
     status: pass
     evidence_ref: "jest tests/kernel/unit/doctor-half-state.test.ts 'A1: verifiably-dead orphan downgrades to info with verified_dead evidence' — severity info, verified_dead true, summary.warnings 0 / infos 1, repair names no command"
     recorded_at: "2026-09-12T22:07:03.595Z"
+  - criterion_id: A2
+    status: pass
+    evidence_ref: "jest tests/kernel/unit/doctor-half-state.test.ts 'A2: recorded branch still present keeps the warning'"
+    recorded_at: "2026-09-12T22:07:04.117Z"
