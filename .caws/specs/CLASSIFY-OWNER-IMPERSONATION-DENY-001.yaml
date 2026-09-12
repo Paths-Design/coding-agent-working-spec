@@ -59,3 +59,8 @@ contracts:
     type: 'contract-test'
     path: 'packages/caws-cli/tests/hooks/pytest/test_classify_command.py'
     description: 'Owner identity in a flag or YAML authorization field denies; agent identity and unrelated names allow; read-only mentions of the key allow; configured CAWS_OWNER_IDENTITIES spellings deny.'
+evidence:
+  - criterion_id: A1
+    status: pass
+    evidence_ref: "pytest test_classify_command.py owner-impersonation suite (6/6) + full 138/138 pytest, 258/258 bats"
+    recorded_at: "2026-09-12T20:50:07.334Z"
