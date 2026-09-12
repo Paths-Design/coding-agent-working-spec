@@ -63,6 +63,73 @@ if command -v sanitize_session >/dev/null 2>&1; then
   fi
 fi
 
+# ── Pack-drift advisory (HOOKPACK-STALENESS-VISIBILITY-001) ─────────────────
+# Project-local hook files SHADOW the machine runtime snapshot: a guard fix
+# shipped into the runtime never reaches a repo that carries its own copy of the
+# stock handler until someone ports it — and nothing says so. Compare the
+# installed stock files against the manifest of the runtime the pointer pins and
+# name the ones that differ.
+#
+# READ-ONLY + FAIL-OPEN: reads the runtime pointer, its manifest and the
+# installed files, emits at most one bounded context line, and emits NOTHING
+# (never blocks) when the pointer, manifest, node, or any file is unavailable.
+# A customized project file is REPORTED, never overwritten, reverted or refused;
+# the message routes to `caws init --plan` / `init diff` (review) and
+# `caws init port` (sanctioned port). Runs BEFORE the CLI check below because it
+# does not depend on the caws binary.
+if [[ "${CAWS_PACK_STALENESS_CHECK:-1}" != "0" ]] && command -v node >/dev/null 2>&1; then
+  _PACK_DRIFT_CTX="$(
+    CAWS_PACK_DRIFT_HOME="${CAWS_HOME:-${HOME:-}/.caws}" \
+    CAWS_PACK_DRIFT_HOOKS_DIR="$SCRIPT_DIR" \
+    node -e '
+      const fs = require("fs");
+      const path = require("path");
+      const crypto = require("crypto");
+      const HEX = /^[a-f0-9]{64}$/;
+      const home = process.env.CAWS_PACK_DRIFT_HOME || "";
+      const hooks = process.env.CAWS_PACK_DRIFT_HOOKS_DIR || "";
+      if (!home || !hooks) process.exit(0);
+      const sha = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
+      let pointer;
+      try {
+        pointer = JSON.parse(fs.readFileSync(path.join(home, "state/adapter-runtime.json"), "utf8"));
+      } catch { process.exit(0); }
+      if (!pointer || !HEX.test(pointer.digest || "")) process.exit(0);
+      let raw;
+      try {
+        raw = fs.readFileSync(path.join(home, "lib/runtimes", pointer.digest, "manifest.json"), "utf8");
+      } catch { process.exit(0); }
+      if (sha(raw) !== pointer.digest) process.exit(0);
+      let manifest;
+      try { manifest = JSON.parse(raw); } catch { process.exit(0); }
+      if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) process.exit(0);
+      const drift = [];
+      for (const [relative, expected] of Object.entries(manifest)) {
+        if (!HEX.test(expected || "")) continue;
+        if (relative.split("/").includes("..")) continue;
+        let installed;
+        try { installed = fs.readFileSync(path.join(hooks, relative)); } catch { continue; }
+        if (sha(installed) !== expected) drift.push(relative);
+      }
+      if (drift.length === 0) process.exit(0);
+      const MAX = 5;
+      const shown = drift.slice(0, MAX).join(", ");
+      const extra = drift.length > MAX ? " (+" + (drift.length - MAX) + " more)" : "";
+      process.stdout.write(
+        "CAWS pack drift: " + drift.length + " installed stock hook file(s) differ from the pinned machine runtime — " +
+        shown + extra + ".\n" +
+        "These project-local copies shadow the runtime, so runtime fixes do not reach this repo until ported.\n" +
+        "Review: caws init --plan (or caws init diff). Port deliberately: caws init port.\n" +
+        "Advisory only — nothing was modified. Silence with CAWS_PACK_STALENESS_CHECK=0."
+      );
+    ' 2>/dev/null
+  )" || _PACK_DRIFT_CTX=""
+
+  if [[ -n "$_PACK_DRIFT_CTX" ]] && command -v emit_additional_context >/dev/null 2>&1; then
+    emit_additional_context "$_PACK_DRIFT_CTX" 2>/dev/null || true
+  fi
+fi
+
 if ! command -v "$CAWS_BIN" >/dev/null 2>&1; then
   exit 0
 fi
