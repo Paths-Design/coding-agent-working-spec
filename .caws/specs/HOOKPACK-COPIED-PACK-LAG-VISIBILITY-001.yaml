@@ -77,3 +77,7 @@ evidence:
     status: pass
     evidence_ref: "jest tests/kernel/unit/doctor-copied-pack-lag.test.ts 'A2: body drift fires while the version lag stays silent' + 'body drift is reported even when a machine runtime is present'"
     recorded_at: "2026-09-12T21:51:16.590Z"
+  - criterion_id: A3
+    status: pass
+    evidence_ref: "jest tests/kernel/unit/doctor-copied-pack-lag.test.ts 'A3: empty and absent observations are silent' + 'matching versions stay silent even with a runtime present'"
+    recorded_at: "2026-09-12T21:51:17.524Z"
