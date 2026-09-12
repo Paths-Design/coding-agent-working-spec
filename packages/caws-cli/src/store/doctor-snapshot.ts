@@ -29,6 +29,7 @@ import {
   type Diagnostic,
   type DoctorInput,
   type GitWorktreeEntry,
+  type SharedPackDriftRow,
   type TemplateCheck,
 } from '../kernel';
 import { loadAgents } from './agents-store';
@@ -354,13 +355,15 @@ function observeFilesystem(
     // versions, observed from the installed rows' managed headers.
     // HOOKPACK-COPIED-PACK-LAG-VISIBILITY-001: also observe per-file BODY
     // drift, because the version stamp does not track content.
+    // CAWS-DEFECT-HOOK-DRIFT-NO-NONDESTRUCTIVE-DISCHARGE-01: drift rows are
+    // baseline-classified (growth / upstream / unobserved) by the observer.
     ...((): {
       installedSharedPackVersion?: number;
       shippingSharedPackVersion: number;
-      installedSharedPackBodyDrift?: readonly string[];
+      installedSharedPackBodyDrift?: readonly SharedPackDriftRow[];
     } => {
       const installed = observeInstalledSharedPackVersion(repoRoot);
-      let bodyDrift: readonly string[] = [];
+      let bodyDrift: readonly SharedPackDriftRow[] = [];
       try {
         bodyDrift = observeSharedPackBodyDrift(repoRoot);
       } catch {

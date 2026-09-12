@@ -6,6 +6,7 @@ export type {
   DoctorReport,
   FindingSeverity,
   GitWorktreeEntry,
+  SharedPackDriftRow,
   TemplateCheck,
 } from './types';
 

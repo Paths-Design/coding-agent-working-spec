@@ -493,20 +493,40 @@ export function renderSettingsWiring(
  *  - what is the harness's activation model? (from pack)
  *
  *  Without these signals the panel becomes a constant STOP sign on every
- *  re-run, which trains agents to ignore it. */
+ *  re-run, which trains agents to ignore it.
+ *
+ *  CAWS-DEFECT-HOOK-DRIFT-NO-NONDESTRUCTIVE-DISCHARGE-01: the no-pack branch
+ *  no longer asserts "governance is NOT in effect" — a run that merely
+ *  installed nothing says nothing about packs installed by earlier runs, and
+ *  a bare `caws init --adopt` (no surface detected) is exactly that shape: a
+ *  verified no-op that used to print a governance-disabled claim. The panel
+ *  now states what THIS run did, that pre-existing installs stand, and — when
+ *  adopt was requested — that adopt only resolves collisions during an
+ *  install and writes nothing on its own. */
+export interface ActivationRenderContext {
+  /** True when the caller invoked init with --adopt. */
+  readonly adoptRequested?: boolean;
+}
+
 export function renderActivationContract(
   result: HookPackInstallResult,
-  wiringStatus?: SettingsWiringStatus
+  wiringStatus?: SettingsWiringStatus,
+  context?: ActivationRenderContext
 ): string {
   const lines: string[] = [];
   lines.push(section('Step: activation'));
 
-  if (!result.pack || result.outcome === 'skipped_explicit_none') {
-    lines.push('  No hook pack was installed. Pre-tool-call governance is NOT in effect.');
-    return lines.join('\n');
-  }
-  if (result.outcome === 'skipped_ambiguous') {
-    lines.push('  No hook pack was selected. Pre-tool-call governance is NOT in effect.');
+  if (!result.pack || result.outcome === 'skipped_explicit_none' || result.outcome === 'skipped_ambiguous') {
+    // Both no-pack outcomes share this panel: with pack null the run wrote
+    // nothing, and the honest statement is about THIS run — a pre-existing
+    // install under .caws/hooks (if any) stands unchanged.
+    lines.push('  This run installed no hook pack (none was selected for this surface).');
+    lines.push('  Nothing was written or changed by this step.');
+    lines.push('  A hook pack already installed under .caws/hooks (if any) remains in effect unchanged.');
+    if (context?.adoptRequested === true) {
+      lines.push('  --adopt only decides collision handling DURING an install; with no install');
+      lines.push('  occurring it writes nothing and changes no governance state.');
+    }
     return lines.join('\n');
   }
 

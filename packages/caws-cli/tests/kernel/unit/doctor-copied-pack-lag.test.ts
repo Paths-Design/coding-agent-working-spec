@@ -39,6 +39,17 @@ function findingFor(report: ReturnType<typeof inspectProjectState>, rule: string
   return report.findings.find((f) => f.rule === rule);
 }
 
+/**
+ * CAWS-DEFECT-HOOK-DRIFT-NO-NONDESTRUCTIVE-DISCHARGE-01: a drift row with NO
+ * baseline — the unobserved shape. Under the growth/stale classification this
+ * is a STALE row, which is exactly what the pre-classification tests below
+ * asserted (warning over every drifted path), so they now double as the
+ * unobserved-never-downgrades coverage.
+ */
+function staleRow(destPath: string) {
+  return { destPath, baselinePresent: false, localGrowth: false, upstreamChange: false };
+}
+
 const RUNTIME = {
   surfaces: ['codex', 'claude-code'],
   legacySurfaces: [] as string[],
@@ -122,8 +133,8 @@ describe('doctor.hooks.pack_body_drift', () => {
           installedSharedPackVersion: 67,
           shippingSharedPackVersion: 67,
           installedSharedPackBodyDrift: [
-            '.caws/hooks/block-dangerous.sh',
-            '.caws/hooks/classify_command.py',
+            staleRow('.caws/hooks/block-dangerous.sh'),
+            staleRow('.caws/hooks/classify_command.py'),
           ],
         })
       )
@@ -146,7 +157,7 @@ describe('doctor.hooks.pack_body_drift', () => {
           installedSharedPackVersion: 67,
           shippingSharedPackVersion: 67,
           systemRuntime: RUNTIME,
-          installedSharedPackBodyDrift: ['.caws/hooks/audit.sh'],
+          installedSharedPackBodyDrift: [staleRow('.caws/hooks/audit.sh')],
         })
       )
     );
@@ -156,7 +167,7 @@ describe('doctor.hooks.pack_body_drift', () => {
   test('a message names at most five files and counts the remainder', () => {
     const paths = Array.from({ length: 9 }, (_, i) => `.caws/hooks/guard-${i}.sh`);
     const report = inspectProjectState(
-      input(fsObs({ installedSharedPackBodyDrift: paths }))
+      input(fsObs({ installedSharedPackBodyDrift: paths.map(staleRow) }))
     );
     const finding = findingFor(report, DOCTOR_RULES.HOOKS_PACK_BODY_DRIFT);
     expect(finding?.message).toContain('9');
@@ -190,7 +201,7 @@ describe('inspectProjectState stays pure', () => {
           installedSharedPackVersion: 56,
           shippingSharedPackVersion: 67,
           systemRuntime: Object.freeze({ ...RUNTIME }),
-          installedSharedPackBodyDrift: Object.freeze(['.caws/hooks/audit.sh']),
+          installedSharedPackBodyDrift: Object.freeze([staleRow('.caws/hooks/audit.sh')]),
         })
       )
     );

@@ -18,6 +18,7 @@ import type {
   GitWorktreeEntry,
   LeaseRegistry,
   Policy,
+  SharedPackDriftRow,
   Spec,
   Waiver,
   WorktreeRegistry,
@@ -191,11 +192,12 @@ export interface StoreSnapshot {
     readonly installedSharedPackVersion?: number;
     readonly shippingSharedPackVersion?: number;
     /**
-     * HOOKPACK-COPIED-PACK-LAG-VISIBILITY-001: destPaths of copied shared hook
-     * files whose body differs from the shipping template (version stamp
-     * normalized). Absent/empty is silent.
+     * HOOKPACK-COPIED-PACK-LAG-VISIBILITY-001 /
+     * CAWS-DEFECT-HOOK-DRIFT-NO-NONDESTRUCTIVE-DISCHARGE-01: drifted copied
+     * shared hook files classified against their pristine baselines (growth /
+     * upstream / unobserved). Absent/empty is silent.
      */
-    readonly installedSharedPackBodyDrift?: readonly string[];
+    readonly installedSharedPackBodyDrift?: readonly SharedPackDriftRow[];
     /** CAWS-DEFECT-LEASE-TMP-STRANDING-01: stranded lease tmp files. */
     /** CAWS-DESIGN-GLOBAL-IDENTITY-HOME-001 A4: global home observation. */
     readonly globalHomeObservation?: GlobalHomeObservation;

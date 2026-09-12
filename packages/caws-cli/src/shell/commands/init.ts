@@ -1362,7 +1362,15 @@ export function runInitCommand(opts: InitCommandOptions = {}): number {
   if (system) {
     out(`System activation for ${chosen.surface}: user registration is configured. Verify native hook trust and execution in a fresh harness session.`);
   } else {
-    out(renderActivationContract(hookPackResult, wiringStatus));
+    // CAWS-DEFECT-HOOK-DRIFT-NO-NONDESTRUCTIVE-DISCHARGE-01: tell the
+    // activation panel when --adopt was requested so a no-op adopt run
+    // renders what actually happened instead of implying governance was
+    // disabled.
+    out(
+      renderActivationContract(hookPackResult, wiringStatus, {
+        ...(opts.adopt === true ? { adoptRequested: true } : {}),
+      })
+    );
   }
 
   // Step 5: first-contact commit hint. When .caws/ was newly created

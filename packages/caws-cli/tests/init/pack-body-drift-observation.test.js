@@ -1,8 +1,9 @@
 'use strict';
 
 /**
- * HOOKPACK-COPIED-PACK-LAG-VISIBILITY-001 A4 —
- * observeSharedPackBodyDrift against a REAL install.
+ * HOOKPACK-COPIED-PACK-LAG-VISIBILITY-001 A4 /
+ * CAWS-DEFECT-HOOK-DRIFT-NO-NONDESTRUCTIVE-DISCHARGE-01 —
+ * observeSharedPackBodyDrift against a REAL install, now row-classified.
  *
  * The version stamp is not a freshness proxy. `installHookPack` stamps
  * `hook_pack_version: <cli-version>` into the project copy while the template
@@ -15,6 +16,10 @@
  * of the real write path, not a hand-built expectation. A hand-built fixture
  * that hashes the installed files to synthesize the expected manifest is
  * tautological and cannot observe install-time divergence at all.
+ *
+ * The classification extension proves the baseline decomposition the doctor
+ * downgrade consumes: installed-vs-baseline = LOCAL GROWTH, baseline-vs-
+ * template = UPSTREAM change, no baseline = unobserved.
  */
 
 const fs = require('fs');
@@ -39,6 +44,8 @@ describe('observeSharedPackBodyDrift (A4)', () => {
   afterAll(() => cleanupAll());
 
   const destAbs = (rel) => path.join(repo, rel);
+  const baselineAbs = (rel) =>
+    path.join(repo, '.caws', 'hooks', '.pristine', 'shared', rel);
 
   test('a byte-pristine install reports no body drift', () => {
     expect(observeSharedPackBodyDrift(repo)).toEqual([]);
@@ -63,17 +70,69 @@ describe('observeSharedPackBodyDrift (A4)', () => {
     }
   });
 
-  test('a genuine body edit names exactly that file', () => {
+  test('a genuine body edit yields a growth-classified row (A1)', () => {
     const original = fs.readFileSync(destAbs(DEST), 'utf8');
     fs.writeFileSync(destAbs(DEST), `${original}\n# repo-local edit\n`);
     try {
-      expect(observeSharedPackBodyDrift(repo)).toEqual([DEST]);
+      expect(observeSharedPackBodyDrift(repo)).toEqual([
+        {
+          destPath: DEST,
+          baselinePresent: true,
+          localGrowth: true,
+          upstreamChange: false,
+        },
+      ]);
     } finally {
       fs.writeFileSync(destAbs(DEST), original);
     }
   });
 
-  test('a second edit is named in sorted order and the first is not sticky', () => {
+  test('a drifted baseline records upstream change alongside growth (A1)', () => {
+    // Append to the BASELINE (not the installed file): installed now differs
+    // from its recorded as-installed copy (growth) AND the baseline differs
+    // from the shipping template (upstream). This is the row shape doctor
+    // renders as "growth the retrofit must port carefully".
+    const original = fs.readFileSync(destAbs(DEST), 'utf8');
+    const baseline = fs.readFileSync(baselineAbs(DEST), 'utf8');
+    fs.writeFileSync(destAbs(DEST), `${original}\n# repo-local edit\n`);
+    fs.writeFileSync(baselineAbs(DEST), `${baseline}\n# baseline moved\n`);
+    try {
+      expect(observeSharedPackBodyDrift(repo)).toEqual([
+        {
+          destPath: DEST,
+          baselinePresent: true,
+          localGrowth: true,
+          upstreamChange: true,
+        },
+      ]);
+    } finally {
+      fs.writeFileSync(destAbs(DEST), original);
+      fs.writeFileSync(baselineAbs(DEST), baseline);
+    }
+  });
+
+  test('a drifted file with NO baseline is unobserved — never classified as growth (A4)', () => {
+    const original = fs.readFileSync(destAbs(DEST), 'utf8');
+    fs.writeFileSync(destAbs(DEST), `${original}\n# repo-local edit\n`);
+    fs.rmSync(baselineAbs(DEST));
+    try {
+      expect(observeSharedPackBodyDrift(repo)).toEqual([
+        {
+          destPath: DEST,
+          baselinePresent: false,
+          localGrowth: false,
+          upstreamChange: false,
+        },
+      ]);
+    } finally {
+      fs.writeFileSync(destAbs(DEST), original);
+      // Restore the baseline from the (restored) installed body minus the
+      // edit — the pristine copy is the rendered install.
+      fs.writeFileSync(baselineAbs(DEST), original);
+    }
+  });
+
+  test('multiple edits are named in sorted order and restoring clears the observation', () => {
     const one = destAbs(DEST);
     const two = destAbs('.caws/hooks/audit.sh');
     const originalOne = fs.readFileSync(one, 'utf8');
@@ -81,10 +140,9 @@ describe('observeSharedPackBodyDrift (A4)', () => {
     fs.writeFileSync(one, `${originalOne}\n# edit one\n`);
     fs.writeFileSync(two, `${originalTwo}\n# edit two\n`);
     try {
-      expect(observeSharedPackBodyDrift(repo)).toEqual([
-        '.caws/hooks/audit.sh',
-        DEST,
-      ]);
+      const rows = observeSharedPackBodyDrift(repo);
+      expect(rows.map((r) => r.destPath)).toEqual(['.caws/hooks/audit.sh', DEST]);
+      expect(rows.every((r) => r.baselinePresent && r.localGrowth && !r.upstreamChange)).toBe(true);
     } finally {
       fs.writeFileSync(one, originalOne);
       fs.writeFileSync(two, originalTwo);

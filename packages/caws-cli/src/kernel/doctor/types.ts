@@ -263,13 +263,20 @@ export interface DoctorInput {
     readonly installedSharedPackVersion?: number;
     readonly shippingSharedPackVersion?: number;
     /**
-     * HOOKPACK-COPIED-PACK-LAG-VISIBILITY-001: destPaths of installed copied
+     * HOOKPACK-COPIED-PACK-LAG-VISIBILITY-001 /
+     * CAWS-DEFECT-HOOK-DRIFT-NO-NONDESTRUCTIVE-DISCHARGE-01: installed copied
      * shared hook files whose BODY differs from the shipping template once the
      * install-time version stamp is normalized on both sides (see
-     * observeSharedPackBodyDrift). Non-empty fires HOOKS_PACK_BODY_DRIFT;
-     * undefined or empty = unobserved/clean (silent).
+     * observeSharedPackBodyDrift), classified against the installer-written
+     * pristine baseline: localGrowth = installed body differs from its
+     * recorded baseline (deliberate repo-owned edits); upstreamChange =
+     * baseline differs from the current template (the retrofit must port
+     * those too); baselinePresent = false means NO baseline was recorded
+     * (installed before baselines shipped) — unobserved, never downgraded.
+     * Growth rows fire HOOKS_PACK_LOCAL_GROWTH (info); non-growth rows keep
+     * HOOKS_PACK_BODY_DRIFT (warning). Undefined or empty = clean (silent).
      */
-    readonly installedSharedPackBodyDrift?: readonly string[];
+    readonly installedSharedPackBodyDrift?: readonly SharedPackDriftRow[];
     /**
      * CAWS-DEFECT-LEASE-TMP-STRANDING-01: stranded atomic-write tmp files in
      * .caws/leases/ (names + ages, observed via the atomic-write lister).
@@ -421,4 +428,20 @@ export interface SystemRuntimeObservation {
   readonly overrides: readonly string[];
   readonly digest?: string;
   readonly error?: string;
+}
+
+/**
+ * CAWS-DEFECT-HOOK-DRIFT-NO-NONDESTRUCTIVE-DISCHARGE-01: one drifted shared
+ * hook file, classified against its pristine baseline. The kernel-local shape
+ * the store/init observer constructs (same pattern as GitWorktreeEntry) —
+ * doctor judges, it never reads baselines itself.
+ */
+export interface SharedPackDriftRow {
+  readonly destPath: string;
+  /** A pristine baseline was recorded for this file. False = unobserved. */
+  readonly baselinePresent: boolean;
+  /** Installed body differs from the baseline: deliberate local growth. */
+  readonly localGrowth: boolean;
+  /** Baseline differs from the current template: upstream moved since install. */
+  readonly upstreamChange: boolean;
 }

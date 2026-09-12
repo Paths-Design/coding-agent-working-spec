@@ -2,6 +2,29 @@
 
 ### Bug Fixes
 
+- **Hook-pack drift findings now distinguish verified local growth from
+  ambiguous copies, and `--adopt` output stops lying**
+  (`CAWS-DEFECT-HOOK-DRIFT-NO-NONDESTRUCTIVE-DISCHARGE-01`, recorded in
+  sterling's `tmp/caws_cli_defects.md` Defect 4). The only discharge for
+  `doctor.hooks.pack_body_drift` / `installed_pack_version_lag` was
+  `caws init --overwrite --force`, which destroys deliberate guard growth.
+
+  - **Drift rows are classified against the pristine baselines the installer
+    writes.** A file whose installed body differs from its recorded baseline
+    is verified NEW local growth → new INFO rule
+    `doctor.hooks.pack_local_growth` (refresh would destroy it; the retrofit
+    is the reconciliation). Baseline-clean drift keeps the WARNING — worded
+    as AMBIGUOUS, because the `caws init port` path re-baselines the ported
+    body, so growth that went through a port looks baseline-clean too
+    (proven live: sterling's `post_tool_use.sh` carries its REPO-LOCAL banner
+    in both the installed file and the baseline). The version-lag finding
+    downgrades to INFO only when every drifted file has verified new growth.
+  - **The bare `caws init --adopt` no-op no longer claims governance is
+    disabled.** A run that installs nothing now states exactly that: nothing
+    was written, any already-installed pack remains in effect, and `--adopt`
+    only decides collision handling during an install. Repair texts no
+    longer offer `--adopt` as a doctor discharge.
+
 - **Undelivered messages to dead sessions gain a retention path**
   (`CAWS-DEFECT-MESSAGE-PRUNE-DEAD-RECIPIENT-01`, recorded in sterling's
   `tmp/caws_cli_defects.md`). `caws message prune` accepted only
