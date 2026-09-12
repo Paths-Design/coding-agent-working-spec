@@ -55,3 +55,8 @@ contracts:
     type: 'contract-test'
     path: 'packages/caws-cli/tests/hooks/bats/block-dangerous.bats'
     description: 'Dry run verifies and stamps without signaling (process survives); unresolved identity holds with the real reason and no stamp; kill=1 still terminates; kill=0 still logs disabled.'
+evidence:
+  - criterion_id: A1
+    status: pass
+    evidence_ref: "bats DRYRUN A1-A2 + existing kill=1/kill=0 regression (264/264 bats, 138/138 pytest)"
+    recorded_at: "2026-09-12T21:04:04.477Z"
