@@ -12,7 +12,6 @@ blast_radius:
     - 'packages/caws-cli/tests/hooks/bats (trap + release suites)'
     - 'repo + template doctrine (AGENTS.md, CLAUDE.md, templates/CLAUDE.md latch sections)'
   data_migration: false
-  operational_rollback_slo: 5m
 scope:
   in:
     - packages/caws-cli/templates/hook-packs/shared/block-dangerous.sh
