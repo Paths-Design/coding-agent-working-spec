@@ -88,3 +88,7 @@ evidence:
     status: pass
     evidence_ref: "jest tests/init/pack-body-drift-observation.test.js 'a genuine body edit yields a growth-classified row' + 'a drifted baseline records upstream change alongside growth' + 'a drifted file with NO baseline is unobserved' — real install, real baselines"
     recorded_at: "2026-09-12T23:38:41.651Z"
+  - criterion_id: A2
+    status: pass
+    evidence_ref: "jest tests/kernel/unit/doctor-hook-growth-classification.test.ts 'A2: growth rows render as info; stale rows keep the body-drift warning naming only themselves' incl. AMBIGUOUS wording + READ-the-deltas repair assertions"
+    recorded_at: "2026-09-12T23:38:42.259Z"
