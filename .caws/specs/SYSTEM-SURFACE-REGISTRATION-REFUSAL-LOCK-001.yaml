@@ -54,3 +54,7 @@ evidence:
     status: pass
     evidence_ref: "jest system-registration: refuses dsh, opencode and zcode with the message naming the supported set AND asserts snapshotTree(user) unchanged plus no surfaces/<x> dir written"
     recorded_at: "2026-09-12T23:12:20.406Z"
+  - criterion_id: A2
+    status: pass
+    evidence_ref: "discriminating control: the same test file asserts configureSystemRuntime SUCCEEDS for codex/claude-code/qwen-code (result.changed true, surfaces/<x> written). A widened vendorFor list would make the refusal assertion (toThrow) fail while the success case still passed; the two tests observe opposite outcomes for the same call"
+    recorded_at: "2026-09-12T23:12:20.936Z"
