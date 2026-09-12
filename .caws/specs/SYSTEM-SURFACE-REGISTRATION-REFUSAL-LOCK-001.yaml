@@ -2,10 +2,11 @@ id: SYSTEM-SURFACE-REGISTRATION-REFUSAL-LOCK-001
 title: 'the machine-runtime registration refusal for adapter-wired harnesses is untested, and the pack-lag rationale mis-states why copied packs stay live'
 risk_tier: 2
 mode: chore
-lifecycle_state: active
-worktree: wt-refusal-lock
+lifecycle_state: closed
+resolution: completed
+closure_notes: 'Auto-closed by caws worktree merge wt-refusal-lock at 6b36388aa241ef774538167e10971bc4bc62fbf4'
 created_at: '2026-09-12T23:08:57.863Z'
-updated_at: '2026-09-12T23:09:15.920Z'
+updated_at: '2026-09-12T23:12:27.861Z'
 created_by_session: 'session-c04418cd-a035-44a9-b26e-378d285ccad1'
 blast_radius:
   modules:
