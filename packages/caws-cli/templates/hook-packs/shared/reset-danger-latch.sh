@@ -59,6 +59,24 @@ fi
 STATE_DIR="$PROJECT_DIR/${CAWS_VENDOR_DIR}/hooks/state"
 LOG_FILE="$PROJECT_DIR/${CAWS_VENDOR_DIR}/logs/danger-latch-resets.log"
 
+# DANGER-LATCH-QUARANTINE-TRAP-001: fail closed on the env-stripped snapshot
+# invocation. A machine snapshot lives under <home>/lib/runtimes/<digest> (and
+# carries a manifest.json sibling — project-local packs carry one too, so the
+# PATH SHAPE is the discriminator, manifest the belt); invoked WITHOUT the env
+# prefix the script takes the non-machine branch above, derives PROJECT_DIR
+# from the SNAPSHOT location (~/.caws/lib — machine state, never a project),
+# searches zero vendor state dirs, and (pre-fix) exited 0 "No danger latches
+# found" while the trap stayed armed — success-by-absence on the only human
+# release path, witnessed live in a consumer repo. Detect the snapshot context
+# structurally and refuse loudly with the corrected command.
+if [[ "${CAWS_MACHINE_RUNTIME:-}" != "1" && "$SCRIPT_DIR" == */lib/runtimes/* && -f "$SCRIPT_DIR/manifest.json" ]]; then
+  echo 'reset-danger-latch.sh: this is a machine-runtime snapshot and CAWS_MACHINE_RUNTIME is not set.' >&2
+  echo '  A snapshot cannot infer the governed project from its own location; without the env prefix' >&2
+  echo '  this reset searches machine state and can only report success-by-absence. Re-run with:' >&2
+  echo "  env CAWS_MACHINE_RUNTIME=1 CAWS_PROJECT_DIR=<absolute-project-root> CAWS_AGENT_SURFACE=${CAWS_AGENT_SURFACE:-claude-code} bash '$SCRIPT_DIR/reset-danger-latch.sh' --session <id> --reason '<why this is safe>'" >&2
+  exit 2
+fi
+
 # CAWS-RESET-LATCH-MULTIVENDOR-001: the danger latch is written by
 # block-dangerous.sh under the WRITER's vendor dir (the active harness bridge
 # sets CAWS_AGENT_SURFACE, e.g. zcode -> .zcode/hooks/state/). This reset is
@@ -302,6 +320,24 @@ case "$MODE" in
 esac
 
 if [[ "${#LATCH_FILES[@]}" -eq 0 && "${#WARN_FILES[@]}" -eq 0 ]]; then
+  # NOTE: _caws_all_vendor_state_dirs emits a single BLANK line when it finds
+  # no dirs (printf '%s\n' with zero args still processes the format once) —
+  # count only non-blank lines.
+  _n_dirs=0
+  while IFS= read -r _vdir; do
+    if [[ -n "$_vdir" ]]; then _n_dirs=$((_n_dirs + 1)); fi
+  done < <(_caws_all_vendor_state_dirs)
+  if (( _n_dirs == 0 )); then
+    # DANGER-LATCH-QUARANTINE-TRAP-001: "searched zero dirs" is never success.
+    # A reset that located nothing to search cannot adjudicate anything; the
+    # trap (and, with escalation enabled, the kill path behind it) stays armed
+    # behind a green exit. Fail loudly and name the likely cause.
+    echo 'reset-danger-latch.sh: located ZERO vendor state dirs to search.' >&2
+    echo '  This reset cannot clear anything and will not report success-by-absence.' >&2
+    echo '  Likely cause: the project root did not resolve (snapshot without env prefix, or a non-repo cwd).' >&2
+    echo "  Re-run with: env CAWS_PROJECT_DIR=<absolute-project-root> bash '$SCRIPT_DIR/reset-danger-latch.sh' --session <id> --reason '<why this is safe>'" >&2
+    exit 2
+  fi
   _searched=""
   while IFS= read -r _vdir; do _searched="${_searched} $_vdir"; done < <(_caws_all_vendor_state_dirs)
   echo "No danger latches found to clear (searched vendor state dirs:${_searched})."
