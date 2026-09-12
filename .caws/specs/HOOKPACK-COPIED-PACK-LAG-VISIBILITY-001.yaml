@@ -8,22 +8,61 @@ updated_at: '2026-09-12T21:42:11.394Z'
 created_by_session: 'session-c04418cd-a035-44a9-b26e-378d285ccad1'
 blast_radius:
   modules:
-    - 'TODO: list one or more modules this spec touches.'
+    - 'packages/caws-cli/src/kernel/doctor (inspect/rules/types) — finding set'
+    - 'packages/caws-cli/src/store/doctor-snapshot.ts — snapshot observations'
+    - 'packages/caws-cli/src/init/hook-install.ts — pack drift observer'
   data_migration: false
 operational_rollback_slo: 5m
 scope:
   in:
-    - 'TODO: list the file(s) or directories this spec authorizes.'
-  out: []
+    - packages/caws-cli/src/init/hook-install.ts
+    - packages/caws-cli/src/kernel/doctor/inspect.ts
+    - packages/caws-cli/src/kernel/doctor/rules.ts
+    - packages/caws-cli/src/kernel/doctor/types.ts
+    - packages/caws-cli/src/store/doctor-snapshot.ts
+    - packages/caws-cli/src/store/types.ts
+    - packages/caws-cli/tests/kernel/unit/doctor-copied-pack-lag.test.ts
+    - packages/caws-cli/tests/init/pack-body-drift-observation.test.js
+  out:
+    - packages/caws-cli/dist
 invariants:
-  - 'TODO: describe one invariant this spec guarantees.'
+  - 'The execution plane is PER SURFACE, not per machine. A repo can have a verified machine runtime AND still execute its project-local .caws/hooks copy: the claude-code and codex native configs wire the machine launcher (~/.caws/bin/caws-hook <surface> <event> --system), while the DSH bridge runs <repoRoot>/.caws/hooks/dispatch/<event>.sh. "A machine runtime is installed" therefore does not imply "the copied pack is inert", and doctor must not treat it as if it does.'
+  - 'doctor.hooks.installed_pack_version_lag fires whenever an installed copied pack version is below the shipping version, regardless of whether a machine runtime exists. Suppressing it on system-runtime presence asserts a wiring fact doctor cannot verify (harness wiring lives outside the repo, and DSH is not a runtime-configured surface at all), and the failure mode of that assertion is silence about a live, old guard plane.'
+  - 'doctor.hooks.pack_body_drift fires when an installed copied shared hook file differs in BODY from the shipping template with the version stamp normalized on both sides. The version stamp is not a freshness proxy: manifest-shared.ts records content changes that landed without a version bump, so version-equality alone cannot prove the copied pack matches what ships.'
+  - 'Both findings are read-only observations over the composed snapshot (no I/O in the kernel inspect path) and always name the sanctioned reconciliation surface (caws init diff / caws init port / --overwrite --force / --adopt), never a hand-edit.'
+  - 'Neither finding mutates, refuses, or blocks: a repo whose copied pack is genuine local growth is REPORTED, not overwritten. Absent observations stay silent (house convention: absence is not a finding).'
 acceptance:
   - id: A1
-    given: 'TODO'
-    when: 'TODO'
-    then: 'TODO'
-non_functional: {}
+    given: 'a snapshot with an installed copied pack below the shipping version AND a machine runtime present'
+    when: 'inspectProjectState runs'
+    then: 'doctor.hooks.installed_pack_version_lag is reported (warning) with both versions in data — the machine runtime no longer suppresses it'
+  - id: A2
+    given: 'a snapshot whose installed copied pack version equals the shipping version but whose observed body-drift list is non-empty'
+    when: 'inspectProjectState runs'
+    then: 'doctor.hooks.pack_body_drift is reported (warning) naming the differing files, and the version-lag rule stays silent'
+  - id: A3
+    given: 'a snapshot with matching versions and an empty (or absent) body-drift observation'
+    when: 'inspectProjectState runs'
+    then: 'neither rule is reported'
+  - id: A4
+    given: 'a real repository whose copied .caws/hooks pack was installed by the shipping CLI and then had exactly one stock file edited'
+    when: 'the body-drift observation is composed over that repository'
+    then: 'it names exactly that file, and a byte-pristine install yields an empty list'
+  - id: A5
+    given: 'any input, including a deep-frozen snapshot'
+    when: 'inspectProjectState runs'
+    then: 'it performs no I/O and mutates nothing'
+observability:
+  - 'Both rules carry the differing destPaths (bounded in the message, complete in data) and a narrowRepair naming caws init diff and caws init port, so a reader can reconcile without reading the source.'
+rollback:
+  - 'Revert the implementation commit; doctor stops reporting copied-pack lag under a machine runtime and stops reporting body drift; rerun the doctor kernel unit suites plus caws doctor.'
+non_functional:
+  security:
+    - 'Read-only advisories: the snapshot only reads installed files and shipping templates, never writes, and never reconciles on its own. Genuine local growth is reported, never overwritten or reverted.'
+  reliability:
+    - 'The body-drift observation is computed once per snapshot composition over the shared pack file list (roughly ninety entries, of which about fifty are present in a project). Any read failure for one file is skipped, so a single unreadable file can never wedge doctor; a wholly absent pack yields an empty observation, which is silent.'
 contracts:
   - name: 'doctor-copied-pack-lag'
     type: contract-test
     path: 'packages/caws-cli/tests/kernel/unit/doctor-copied-pack-lag.test.ts'
+    description: 'Lag fires with a machine runtime present; body drift fires independently of the version stamp; both silent when matching; observation names exactly the edited stock file against a real install.'
