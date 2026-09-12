@@ -79,3 +79,8 @@ contracts:
     type: contract-test
     path: 'packages/caws-cli/tests/shell/message-retention-prune.test.js'
     description: 'Shell flag surface: new accepted status value, refusal of bare undelivered, dry-run default, apply output; delivered path unchanged.'
+evidence:
+  - criterion_id: A1
+    status: pass
+    evidence_ref: "jest tests/store/messages-dead-recipient-prune.test.js 'A1' — no-lease + stale-heartbeat recipients are candidates (recipient-dead), floor 604800000 reported"
+    recorded_at: "2026-09-12T22:19:16.322Z"
