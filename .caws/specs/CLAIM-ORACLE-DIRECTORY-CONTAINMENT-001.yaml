@@ -65,3 +65,7 @@ evidence:
     status: pass
     evidence_ref: pytest test_worktree_claim_oracle.py containment (10/10) + bats scope-guard CONTAIN A1-A3
     recorded_at: "2026-09-12T20:42:16.588Z"
+  - criterion_id: A2
+    status: pass
+    evidence_ref: pytest test_worktree_claim_oracle.py containment (10/10) + bats scope-guard CONTAIN A1-A3
+    recorded_at: "2026-09-12T20:42:17.829Z"
