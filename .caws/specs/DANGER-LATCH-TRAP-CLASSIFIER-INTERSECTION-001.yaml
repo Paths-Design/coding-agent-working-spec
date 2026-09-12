@@ -8,20 +8,39 @@ updated_at: '2026-09-12T20:27:01.712Z'
 created_by_session: 'session-c04418cd-a035-44a9-b26e-378d285ccad1'
 blast_radius:
   modules:
-    - 'TODO: list one or more modules this spec touches.'
+    - 'packages/caws-cli/templates/hook-packs/shared/block-dangerous.sh (trapped read-only branch)'
+    - 'packages/caws-cli/tests/hooks/bats/block-dangerous.bats'
   data_migration: false
-operational_rollback_slo: 5m
 scope:
   in:
-    - 'TODO: list the file(s) or directories this spec authorizes.'
-  out: []
+    - packages/caws-cli/templates/hook-packs/shared/block-dangerous.sh
+    - packages/caws-cli/tests/hooks/bats/block-dangerous.bats
+  out:
+    - packages/caws-cli/src
+    - packages/caws-cli/dist
 invariants:
-  - 'TODO: describe one invariant this spec guarantees.'
+  - 'While trapped, a command is admitted ONLY when it is BOTH on the fixed read-only allowlist (single simple command, separator- and substitution-free) AND classified "allow". The allowlist is a necessary condition, not a sufficient one.'
+  - 'The credential-read class the classifier denies (cat ~/.ssh/id_rsa, cat /etc/passwd, cat .env, authorized_keys) is denied while trapped by the intersection, closing the hole where the allowlist was an alternative to the classifier rather than an additional constraint on it.'
+  - 'ask-class commands deny while trapped: a quarantined session cannot prompt a human, so a classifier ask has no admissible outcome — ask is treated as refusal, and the refusal message names the classifier decision so the cause is legible.'
+  - 'Classifier unavailability fails closed: an unresolvable decision is never "allow", so a machine without the classifier admits nothing while trapped rather than admitting everything on the allowlist.'
+  - 'Denial semantics are otherwise unchanged: strike recorded, escalation path and identity verification identical to TRAP-001.'
 acceptance:
   - id: A1
-    given: 'TODO'
-    when: 'TODO'
-    then: 'TODO'
+    given: 'a session with an armed trap sentinel'
+    when: 'it runs an allowlisted command the classifier denies (cat ~/.ssh/id_rsa, cat /etc/passwd, cat .env)'
+    then: 'the guard emits a block decision whose reason names the classifier refusal, and records a strike'
+  - id: A2
+    given: 'a session with an armed trap sentinel'
+    when: 'it runs an allowlisted command the classifier only asks about (bare `git`)'
+    then: 'the guard emits a block decision (ask-class denies while trapped)'
+  - id: A3
+    given: 'a session with an armed trap sentinel'
+    when: 'it runs an allowlisted command the classifier allows (ls -la, git status, cat <project file>)'
+    then: 'the guard exits 0 and admits the command — the intersection does not break legitimate read-only orientation'
+  - id: A4
+    given: 'the corpus harness (4,759 real commands from a terminal-agent training population) run against the trap predicate'
+    when: 'false admits are counted (trap admits AND classifier not allow)'
+    then: 'the count is zero — no command is trap-admitted that the classifier would not allow'
 observability:
   - 'Every intersection refusal records a trap strike naming the classifier decision, and escalation decisions land in the danger-latch escalation log unchanged from TRAP-001.'
 rollback:
@@ -29,7 +48,10 @@ rollback:
 non_functional:
   security:
     - 'Closes the credential-read hole: an allowlisted binary with any path (cat ~/.ssh/id_rsa, cat /etc/passwd, cat .env) is denied while trapped because the classifier flags it; ask-class commands deny too since a quarantined session cannot prompt a human. Fails closed when the classifier is unavailable.'
+  reliability:
+    - 'The trapped read-only path now invokes the classifier, so a trapped session pays one classifier call per orientation command; correctness of the intersection takes precedence over that cost, and the non-trapped path is unchanged.'
 contracts:
   - name: 'trap-intersection-admission'
-    type: contract-test
+    type: 'contract-test'
     path: 'packages/caws-cli/tests/hooks/bats/block-dangerous.bats'
+    description: 'Trapped: classifier-denied allowlisted commands (credential reads) and ask-class commands block with strikes naming the classifier decision; classifier-allowed allowlisted commands still admit; corpus re-run yields zero false admits.'
