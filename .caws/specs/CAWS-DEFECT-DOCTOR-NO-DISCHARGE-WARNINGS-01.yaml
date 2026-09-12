@@ -93,3 +93,7 @@ evidence:
     status: pass
     evidence_ref: "jest tests/kernel/unit/doctor-half-state.test.ts 'A3a: recorded path still exists' + 'A3b: linked worktree still listed at recorded path' both keep warning"
     recorded_at: "2026-09-12T22:07:04.678Z"
+  - criterion_id: A4
+    status: pass
+    evidence_ref: "jest tests/kernel/unit/doctor-half-state.test.ts 'A4: ... keeps the warning — unobserved never downgrades' (3-case matrix) + 'A4b: created-event without a recorded path'"
+    recorded_at: "2026-09-12T22:07:05.200Z"
