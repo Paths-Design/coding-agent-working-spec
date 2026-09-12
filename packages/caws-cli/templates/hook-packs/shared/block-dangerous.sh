@@ -83,7 +83,10 @@ _LATCH_SCOPE_NOTE="the session is QUARANTINED: only fixed read-only commands and
 danger_state_dir() {
   local project_dir="${CAWS_PROJECT_DIR:-.}"
   local state_dir="$project_dir/${CAWS_VENDOR_DIR}/hooks/state"
-  mkdir -p "$state_dir"
+  # DANGER-LATCH-TRAP-WRITE-EDIT-001: --no-create lets the file-tool trap
+  # check ASK whether a sentinel exists without creating the state dir as a
+  # side effect of every Write/Edit in every repo it is installed into.
+  [[ "${1:-}" == "--no-create" ]] || mkdir -p "$state_dir"
   printf '%s\n' "$state_dir"
 }
 
@@ -120,7 +123,7 @@ _danger_safe_session() {
 danger_latch_file() {
   local safe_session
   safe_session=$(_danger_safe_session "$1")
-  printf '%s/danger-latch-%s.json\n' "$(danger_state_dir)" "$safe_session"
+  printf '%s/danger-latch-%s.json\n' "$(danger_state_dir "${2:-}")" "$safe_session"
 }
 
 # Warn-marker sibling of the latch file. DANGER-LATCH-APPROVAL-AND-FEEDBACK-001
@@ -447,6 +450,31 @@ else
   SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // env.CAWS_SESSION_ID // env.CLAUDE_SESSION_ID // env.HOOK_SESSION_ID // "unknown"')
 fi
 unset _PAYLOAD_SID
+
+# ── DANGER-LATCH-TRAP-WRITE-EDIT-001: the trap covers the FILE TOOLS too ────
+# The Bash-only branch below meant a quarantined session could still mutate
+# source, specs, and doctrine through Write/Edit. On kill-disabled surfaces
+# (server-shaped hosts, where no SIGTERM contains the session) that reduced
+# "quarantine" to "no shell mutations" — a claim the trap's own doctrine did
+# not qualify. A trapped session gets NO file-tool mutation: every Write/Edit
+# is denied, recorded as a strike, and escalated through the SAME
+# identity-verified path as Bash. Untrapped sessions are untouched: the lookup
+# uses --no-create, emits nothing, and exits 0.
+case "$TOOL_NAME" in
+  Write|Edit|NotebookEdit|MultiEdit)
+    if [[ -n "${SESSION_ID:-}" && "$SESSION_ID" != "unknown" ]]; then
+      WRITE_LATCH_FILE="$(danger_latch_file "$SESSION_ID" --no-create)"
+      if [[ -f "$WRITE_LATCH_FILE" ]]; then
+        WRITE_PATH="$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // .tool_input.path // ""')"
+        trap_record_strike "$WRITE_LATCH_FILE" "$TOOL_NAME $WRITE_PATH"
+        REASON="CAWS command-safety: this session is QUARANTINED (danger trap) and file mutations are refused — the trap covers Bash AND the file tools, so there is no read-only Write/Edit. The attempt to $TOOL_NAME '$WRITE_PATH' was recorded as a strike — on surfaces with kill escalation enabled, the first such attempt ends this session's process (identity-verified SIGTERM to the agent pid). This is a human-review boundary: do not retry the write, do not route it through another tool, and do not ask another agent to make it. You, the agent, CANNOT clear this in-band: the reset is human-only by design. Ask the USER to run, from their own shell: $(danger_recovery_command "$SESSION_ID")  (or --all to clear every latch). Sentinel: $WRITE_LATCH_FILE"
+        emit_block_json "$REASON"
+        trap_escalate "$WRITE_LATCH_FILE" "$SESSION_ID" "$TOOL_NAME $WRITE_PATH"
+      fi
+    fi
+    exit 0
+    ;;
+esac
 
 # Only check Bash tool
 if [[ "$TOOL_NAME" != "Bash" ]] || [[ -z "$COMMAND" ]]; then
