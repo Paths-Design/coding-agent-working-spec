@@ -104,3 +104,7 @@ evidence:
     status: pass
     evidence_ref: "jest tests/kernel/unit/doctor-hook-growth-classification.test.ts 'A5: deep-frozen classified rows survive inspection unmutated'"
     recorded_at: "2026-09-12T23:38:43.930Z"
+  - criterion_id: A6
+    status: pass
+    evidence_ref: "jest tests/init/init-hook-pack-render.test.js A6 describe — no-pack panels state the no-op, pre-existing installs stand, --adopt scope named; 'NOT in effect' absent"
+    recorded_at: "2026-09-12T23:38:44.520Z"
