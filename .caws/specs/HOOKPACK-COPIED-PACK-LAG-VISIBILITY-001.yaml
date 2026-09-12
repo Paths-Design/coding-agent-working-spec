@@ -73,3 +73,7 @@ evidence:
     status: pass
     evidence_ref: "jest tests/kernel/unit/doctor-copied-pack-lag.test.ts 'A1: a machine runtime installed does NOT suppress copied-pack lag' — the superseded expectation in doctor-installed-pack-lag.test.ts fails against the new behavior (observed: rule present with systemRuntime set) and was rewritten with the falsifying evidence in its comment"
     recorded_at: "2026-09-12T21:51:15.597Z"
+  - criterion_id: A2
+    status: pass
+    evidence_ref: "jest tests/kernel/unit/doctor-copied-pack-lag.test.ts 'A2: body drift fires while the version lag stays silent' + 'body drift is reported even when a machine runtime is present'"
+    recorded_at: "2026-09-12T21:51:16.590Z"
