@@ -96,3 +96,7 @@ evidence:
     status: pass
     evidence_ref: "jest tests/kernel/unit/doctor-hook-growth-classification.test.ts 'A3: version lag downgrades to info only when every drift row is growth' (all-growth info w/ growth_rows data; +unobserved and stamp-only stay warning)"
     recorded_at: "2026-09-12T23:38:42.832Z"
+  - criterion_id: A4
+    status: pass
+    evidence_ref: "jest tests/kernel/unit/doctor-hook-growth-classification.test.ts 'A4: a growth row with a readable baseline but unreadable template never downgrades anything' + doctor-copied-pack-lag staleRow conversions (baseline-less rows keep warning)"
+    recorded_at: "2026-09-12T23:38:43.369Z"
