@@ -101,3 +101,7 @@ evidence:
     status: pass
     evidence_ref: "jest tests/kernel/unit/doctor-global-home.test.ts 'A5: a home with sessions AND an unknown entry warns only on the unknown one and infos the legacy one'"
     recorded_at: "2026-09-12T22:07:05.739Z"
+  - criterion_id: A6
+    status: pass
+    evidence_ref: "jest tests/kernel/unit/doctor-global-home.test.ts 'A6: a home whose only extra entry is sessions does not warn'"
+    recorded_at: "2026-09-12T22:07:06.340Z"
