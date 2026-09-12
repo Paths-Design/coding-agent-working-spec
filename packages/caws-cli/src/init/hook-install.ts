@@ -44,6 +44,7 @@ import type {
   InstallFileState,
   ManagedHeader,
 } from './hook-packs/types';
+import type { SharedPackDriftRow } from '../kernel/doctor/types';
 import { SHARED_PACK, TELEMETRY_ROW_DEST_PATHS } from './hook-packs/manifest-shared';
 
 /** Location of the pack templates relative to the caws-cli package root.
@@ -452,10 +453,22 @@ function evaluateFileState(
  * READ-ONLY: unlike the install path, nothing is written — not even pristine
  * baselines. A file that cannot be read/classified is skipped, never fatal, so
  * one unreadable path cannot wedge a doctor run.
+ *
+ * CAWS-DEFECT-HOOK-DRIFT-NO-NONDESTRUCTIVE-DISCHARGE-01: each drifted row is
+ * classified against the pristine baseline the installer records
+ * (.caws/hooks/.pristine/<packId>/<destPath>): LOCAL GROWTH = installed body
+ * differs from its baseline (deliberate repo-owned edits — refreshing would
+ * destroy them); UPSTREAM change = baseline differs from the current rendered
+ * template (the retrofit must port those too). A drifted file with no baseline
+ * is UNOBSERVED (baselinePresent=false) — doctor keeps warning on it. All
+ * comparisons use the same stripPackVersion normalization evaluateFileState
+ * uses, so stamp-only differences never count as growth or upstream change.
  */
-export function observeSharedPackBodyDrift(repoRoot: string): readonly string[] {
+export function observeSharedPackBodyDrift(
+  repoRoot: string
+): readonly SharedPackDriftRow[] {
   const packRoot = packTemplateRoot(SHARED_PACK.id);
-  const drifted: string[] = [];
+  const drifted: SharedPackDriftRow[] = [];
   for (const file of SHARED_PACK.installedFiles) {
     let kind: InstallFileState['kind'];
     try {
@@ -469,9 +482,40 @@ export function observeSharedPackBodyDrift(repoRoot: string): readonly string[] 
     } catch {
       continue;
     }
-    if (kind === 'managed_drift') drifted.push(file.destPath);
+    if (kind !== 'managed_drift') continue;
+
+    // Built mutable, classified below, then pushed as the frozen row shape.
+    const row: {
+      destPath: string;
+      baselinePresent: boolean;
+      localGrowth: boolean;
+      upstreamChange: boolean;
+    } = {
+      destPath: file.destPath,
+      baselinePresent: false,
+      localGrowth: false,
+      upstreamChange: false,
+    };
+    const localBytes = readBytes(path.join(repoRoot, file.destPath));
+    const pristine = readPristineBaseline(repoRoot, SHARED_PACK.id, file.destPath);
+    if (localBytes !== null && pristine !== null) {
+      row.baselinePresent = true;
+      const localBody = stripPackVersion(localBytes.toString('utf8'));
+      const pristineBody = stripPackVersion(pristine);
+      const sourceBytes = readBytes(path.join(packRoot, file.sourcePath));
+      if (sourceBytes !== null) {
+        const templateBody = stripPackVersion(
+          renderPackFileBytes(sourceBytes, repoRoot, file, SHARED_PACK.packVersion).toString('utf8')
+        );
+        row.localGrowth = localBody !== pristineBody;
+        row.upstreamChange = pristineBody !== templateBody;
+      }
+      // Template unreadable: leave both flags false but baselinePresent true —
+      // the row stays unclassified (not growth), never a false downgrade.
+    }
+    drifted.push(row);
   }
-  return drifted.sort((a, b) => a.localeCompare(b));
+  return drifted.sort((a, b) => a.destPath.localeCompare(b.destPath));
 }
 
 // ─── Install ─────────────────────────────────────────────────────────────

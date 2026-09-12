@@ -1349,17 +1349,44 @@ export function inspectProjectState(input: DoctorInput): DoctorReport {
   // "systemRuntime present" cannot stand in for "the copied pack is inert".
   // Suppressing on it made doctor silent about a live, 11-version-old guard
   // plane in this very repo.
+  //
+  // CAWS-DEFECT-HOOK-DRIFT-NO-NONDESTRUCTIVE-DISCHARGE-01: severity is
+  // conditional on the baseline-classified drift rows. When drift exists and
+  // EVERY row is verified local growth (installed differs from its baseline),
+  // the divergence is deliberate repo-owned surface — the lag is fully
+  // explained and refresh would destroy the growth — so the finding renders
+  // as INFO (retrofit owed, not staleness). Any row WITHOUT verified growth
+  // (baseline-less, clean-baseline, or no drift rows at all) keeps the
+  // warning: clean-baseline drift is ambiguous (a port may have absorbed
+  // growth into the baseline), and a pure stamp lag is refreshable.
+  const bodyDriftRows = input.filesystem?.installedSharedPackBodyDrift;
+  const growthRows = (bodyDriftRows ?? []).filter((r) => r.baselinePresent && r.localGrowth);
+  const staleRows = (bodyDriftRows ?? []).filter((r) => !(r.baselinePresent && r.localGrowth));
+  const lagFullyExplainedByGrowth =
+    bodyDriftRows !== undefined &&
+    bodyDriftRows.length > 0 &&
+    staleRows.length === 0 &&
+    growthRows.length === bodyDriftRows.length;
   if (installedPack !== undefined && shippingPack !== undefined && installedPack < shippingPack) {
     findings.push(
       finding(
         DOCTOR_RULES.HOOKS_INSTALLED_PACK_VERSION_LAG,
-        'warning',
-        `The installed CAWS shared hook pack is version ${installedPack} while the CLI ships version ${shippingPack}. The hooks enforcing this repo are runtime code the repo no longer contains — the guard plane must never silently run stale. A project-wired surface (for example the DSH bridge, which runs .caws/hooks/dispatch/*.sh directly) executes THIS copy, so an installed machine runtime does not make it inert.`,
+        lagFullyExplainedByGrowth ? 'info' : 'warning',
+        lagFullyExplainedByGrowth
+          ? `The installed CAWS shared hook pack is version ${installedPack} while the CLI ships version ${shippingPack}, and every drifted file's pristine baseline proves deliberate local growth — the divergence is verified repo-owned surface, not staleness. Refreshing would replace that growth; the reconciliation is the retrofit (absorb the growth upstream, then re-init).`
+          : `The installed CAWS shared hook pack is version ${installedPack} while the CLI ships version ${shippingPack}. The hooks enforcing this repo are runtime code the repo no longer contains — the guard plane must never silently run stale. A project-wired surface (for example the DSH bridge, which runs .caws/hooks/dispatch/*.sh directly) executes THIS copy, so an installed machine runtime does not make it inert.`,
         {
           subject: '.caws/hooks',
-          narrowRepair:
-            'Run `caws init diff` to inspect per-file drift, then `caws init --overwrite --force` to refresh to the shipping baseline (or `--adopt` to keep local growth on specific files).',
-          data: { installed_version: installedPack, shipping_version: shippingPack },
+          narrowRepair: lagFullyExplainedByGrowth
+            ? 'Informational: the lag is fully explained by baseline-verified local growth (see doctor.hooks.pack_local_growth). Run `caws init diff` to review the deltas; reconcile by absorbing the growth into the shared pack upstream and re-initializing. Do not refresh wholesale — that replaces the growth.'
+            : 'Run `caws init diff` to inspect per-file drift. Refresh with `caws init --overwrite --force` only after confirming every drifted file is template-stale — a file whose local growth went through a port shows no baseline edit but is still growth. Files with baseline-verified NEW growth are reported separately as informational.',
+          data: {
+            installed_version: installedPack,
+            shipping_version: shippingPack,
+            ...(bodyDriftRows !== undefined
+              ? { growth_rows: growthRows.length, stale_rows: staleRows.length }
+              : {}),
+          },
         }
       )
     );
@@ -1369,25 +1396,66 @@ export function inspectProjectState(input: DoctorInput): DoctorReport {
   // comparison structurally cannot see — the version stamp is not a freshness
   // proxy (manifest-shared.ts records content changes that landed without a
   // bump). Undefined or empty observation = silent (house convention).
+  //
+  // CAWS-DEFECT-HOOK-DRIFT-NO-NONDESTRUCTIVE-DISCHARGE-01: rows split by
+  // baseline classification. Growth rows (baselinePresent && localGrowth) are
+  // deliberate repo-owned surface — HOOKS_PACK_LOCAL_GROWTH at INFO, because
+  // the only wholesale remedy (refresh) would destroy them. Stale rows (no
+  // baseline, or installed matches baseline) keep the warning — refresh is
+  // safe and honest for exactly that class.
   const bodyDrift = input.filesystem?.installedSharedPackBodyDrift;
   if (bodyDrift !== undefined && bodyDrift.length > 0) {
     const MAX_NAMED = 5;
-    const named = bodyDrift.slice(0, MAX_NAMED).join(', ');
-    const remainder =
-      bodyDrift.length > MAX_NAMED ? ` (+${bodyDrift.length - MAX_NAMED} more)` : '';
-    findings.push(
-      finding(
-        DOCTOR_RULES.HOOKS_PACK_BODY_DRIFT,
-        'warning',
-        `${bodyDrift.length} installed CAWS shared hook file(s) differ in body from the shipping template (not merely by the version stamp): ${named}${remainder}. The version header does not track content, so a matching version does not prove the copied pack matches what this CLI ships.`,
-        {
-          subject: '.caws/hooks',
-          narrowRepair:
-            'Run `caws init diff` to inspect the per-file diffs. Port upstream changes with `caws init port`, refresh wholesale with `caws init --overwrite --force`, or keep intentional local growth with `--adopt`. Nothing is overwritten automatically.',
-          data: { drift_count: bodyDrift.length, drift_paths: [...bodyDrift] },
-        }
-      )
-    );
+    if (staleRows.length > 0) {
+      const stalePaths = staleRows.map((r) => r.destPath);
+      const named = stalePaths.slice(0, MAX_NAMED).join(', ');
+      const remainder =
+        stalePaths.length > MAX_NAMED ? ` (+${staleRows.length - MAX_NAMED} more)` : '';
+      findings.push(
+        finding(
+          DOCTOR_RULES.HOOKS_PACK_BODY_DRIFT,
+          'warning',
+          `${stalePaths.length} installed CAWS shared hook file(s) differ from the shipping template while showing no edit over their recorded baseline: ${named}${remainder}. This shape is AMBIGUOUS: it is either a refreshable stale copy, or a file whose local growth was absorbed into its baseline by an earlier port (the port path re-baselines the ported body). Refreshing before distinguishing the two would destroy growth in the second case.`,
+          {
+            subject: '.caws/hooks',
+            narrowRepair:
+              'Run `caws init diff` and READ the deltas before refreshing: content that looks repo-specific (banners, repo-named handlers) is growth even when the baseline matches. Only refresh with `caws init --overwrite --force` once every listed file is confirmed template-stale. Files with baseline-verified NEW growth are reported separately as informational.',
+            data: {
+              drift_count: staleRows.length,
+              drift_paths: stalePaths,
+            },
+          }
+        )
+      );
+    }
+    if (growthRows.length > 0) {
+      const growthPaths = growthRows.map((r) => r.destPath);
+      const named = growthPaths.slice(0, MAX_NAMED).join(', ');
+      const remainder =
+        growthPaths.length > MAX_NAMED ? ` (+${growthPaths.length - MAX_NAMED} more)` : '';
+      const upstreamAlso = growthRows.filter((r) => r.upstreamChange).map((r) => r.destPath);
+      const upstreamNote =
+        upstreamAlso.length > 0
+          ? ` ${upstreamAlso.length} of them also carry upstream template changes since their baseline was recorded — the retrofit must port those too.`
+          : '';
+      findings.push(
+        finding(
+          DOCTOR_RULES.HOOKS_PACK_LOCAL_GROWTH,
+          'info',
+          `${growthPaths.length} installed CAWS shared hook file(s) carry deliberate local growth over their recorded pristine baseline (verified — not staleness): ${named}${remainder}.${upstreamNote} Refreshing would replace this growth; the divergence is repo-owned surface awaiting reconciliation.`,
+          {
+            subject: '.caws/hooks',
+            narrowRepair:
+              'No refresh required — the growth is baseline-verified and intentional. Run `caws init diff` to review the deltas, then reconcile by absorbing the growth into the shared pack upstream and re-initializing so the shipped template carries it. Nothing is overwritten automatically.',
+            data: {
+              growth_count: growthRows.length,
+              growth_paths: growthPaths,
+              upstream_changed_paths: upstreamAlso,
+            },
+          }
+        )
+      );
+    }
   }
 
   // CAWS-DEFECT-LEASE-TMP-STRANDING-01: a lease write crashed mid-rename and

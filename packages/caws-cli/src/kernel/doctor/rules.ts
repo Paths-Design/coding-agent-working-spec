@@ -282,11 +282,31 @@ export const DOCTOR_RULES = {
    * NOT a freshness proxy — manifest-shared.ts records content changes that
    * landed without a version bump — so version equality cannot prove the copied
    * pack matches what the CLI ships. This is the gap the version-lag rule above
-   * structurally cannot see. Severity: warning. Repair: `caws init diff` to
-   * inspect, then `caws init port` / `--overwrite --force` (refresh) or `--adopt`
-   * (keep local growth). Genuine local growth is REPORTED, never overwritten.
+   * structurally cannot see.
+   *
+   * CAWS-DEFECT-HOOK-DRIFT-NO-NONDESTRUCTIVE-DISCHARGE-01: this rule now fires
+   * ONLY over rows WITHOUT verified new growth — no baseline, or the installed
+   * body matches its baseline. That shape is AMBIGUOUS rather than refreshable:
+   * the port path re-baselines the ported body, so a growth file that went
+   * through a port shows "no edit over baseline" too. Severity: warning, with a
+   * repair that demands reading the diff before any refresh. Rows whose
+   * baseline PROVES new growth (installed differs from baseline) render as
+   * HOOKS_PACK_LOCAL_GROWTH (info) instead.
    */
   HOOKS_PACK_BODY_DRIFT: 'doctor.hooks.pack_body_drift',
+
+  /**
+   * CAWS-DEFECT-HOOK-DRIFT-NO-NONDESTRUCTIVE-DISCHARGE-01: installed copied
+   * shared hook files whose pristine baseline (written by the installer at
+   * .caws/hooks/.pristine/<packId>/<destPath>) PROVES deliberate local growth —
+   * the installed body differs from the as-installed baseline. Refreshing
+   * would destroy that growth, so a warning demanding refresh is a demand
+   * nobody can safely perform (the destructive no-discharge class). Severity:
+   * INFO — the divergence is verified repo-owned surface awaiting the retrofit
+   * (absorb the growth upstream, then re-init), and rows that also carry
+   * upstream template changes name them so the retrofit ports everything.
+   */
+  HOOKS_PACK_LOCAL_GROWTH: 'doctor.hooks.pack_local_growth',
 
   /**
    * CAWS-DEFECT-LEASE-TMP-STRANDING-01: stranded atomic-write tmp files in
