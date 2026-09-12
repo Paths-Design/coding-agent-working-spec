@@ -587,6 +587,15 @@ export const SHARED_PACK: HookPackV1 = {
       managed: true,
     },
     {
+      // GUARD-HEREDOC-BODY-READ-AS-COMMAND-001: neutralize safelisted heredoc
+      // BODIES before a guard tokenizes command text. Ported from sterling's
+      // .caws/hooks/lib/heredoc.sh; consumed by bash-write-guard.sh.
+      destPath: '.caws/hooks/lib/heredoc.sh',
+      sourcePath: 'lib/heredoc.sh',
+      executable: false,
+      managed: true,
+    },
+    {
       // CAWS-SESSION-RESOLVER-GUARD-DIVERGENCE-001 (A6): shared session-id
       // precedence helper sourced by the write guards, block-dangerous.sh, and
       // reset-danger-latch.sh so every shell surface resolves "the current
