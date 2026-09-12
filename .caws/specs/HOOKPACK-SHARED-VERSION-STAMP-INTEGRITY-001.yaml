@@ -45,3 +45,8 @@ non_functional:
   reliability:
     - 'Two-file change with no runtime code path: a constant and a derived JSON baseline. The control that consumes them is the existing fingerprint test, which fails closed if they disagree.'
 contracts: []
+evidence:
+  - criterion_id: A1
+    status: pass
+    evidence_ref: "jest tests/init/pack-fingerprint.test.js 'shared pack fingerprint is unchanged (or version bumped)' — red before (recorded version 67 vs drifted live fingerprint), green after re-deriving the baseline at version 68"
+    recorded_at: "2026-09-12T22:20:18.710Z"
