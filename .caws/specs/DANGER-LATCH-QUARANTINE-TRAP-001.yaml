@@ -5,7 +5,7 @@ mode: feature
 lifecycle_state: active
 worktree: wt-danger-trap
 created_at: '2026-09-12T18:23:56.215Z'
-updated_at: '2026-09-12T18:24:47.254Z'
+updated_at: '2026-09-12T18:27:43.003Z'
 created_by_session: 'session-c04418cd-a035-44a9-b26e-378d285ccad1'
 blast_radius:
   modules:
@@ -24,6 +24,7 @@ scope:
     - packages/caws-cli/templates/CLAUDE.md
     - AGENTS.md
     - CLAUDE.md
+    - packages/caws-cli/templates/hook-packs/shared/lib/agent-surface.sh
   out:
     - packages/caws-cli/src
     - packages/caws-cli/dist
@@ -32,7 +33,7 @@ invariants:
   - 'Trap state is the existing danger-latch sentinel file (danger-latch-<session>.json); no new authority surface is introduced, and the human reset script remains the only sanctioned clear path.'
   - 'While the trap is engaged, Bash admission is deny-by-default: only a fixed read-only allowlist of single simple commands (no separators, pipes, redirects, or command substitution) and the reset invocation itself are admitted; classifier "allow" no longer admits anything on its own.'
   - 'caws message send and caws message reply are refused with a dedicated enlist-help reason while trapped; a trapped session cannot delegate a blocked action to a peer.'
-  - 'The first non-read-only attempt while trapped escalates: the session''s agent process receives SIGTERM. The kill fires only when the agent PID identity verifies (recorded pid + start-time + comm match the live process), the target is not PID 1 and not the hook''s own process, and no other live session record references the same PID (shared-PID refusal). Any verification failure degrades to block + loud log, never to an unverified kill.'
+  - 'The first non-read-only attempt while trapped escalates: the session''s agent process receives SIGTERM. The kill fires only when the surface has escalation enabled (CAWS_TRAP_KILL=1, set per-surface by agent-surface.sh — server-shaped hosts where one process serves many sessions ship it off), the agent PID identity verifies (recorded pid + start-time + comm match the live process), and the target is not PID 1 and not the hook''s own process. Any verification failure or disabled surface degrades to block + loud log, never to an unverified kill.'
   - 'SessionStart reads quarantine state for the resolved session id and reports it as non-blocking additionalContext; it never kills and never blocks, so a restarted quarantined session converges to the same trap instead of a kill-restart loop.'
   - 'Every denial while trapped and every escalation decision is recorded (sentinel JSON strike fields + vendor danger-latch log line) with session id, command, and identity verdict.'
   - 'The reset fails closed: a reset that located zero vendor state dirs to search, or a machine-snapshot reset invoked without its env prefix, exits non-zero with the corrected command instead of reporting success-by-absence.'
@@ -66,9 +67,9 @@ acceptance:
     when: 'it runs any non-read-only command'
     then: 'the guard records a strike, emits the block decision first, then sends SIGTERM to the verified agent pid, and the escalation (pid, signal, reason) is logged to the vendor danger-latch log'
   - id: A8
-    given: 'a session with an armed trap sentinel whose recorded agent pid is dead, recycled (start-time mismatch), PID 1, or shared with another live session record'
+    given: 'a session with an armed trap sentinel whose recorded agent pid is dead, recycled (start-time mismatch), PID 1, drifted from the live resolution, or whose surface ships kill escalation disabled (shared-process host)'
     when: 'it runs any non-read-only command'
-    then: 'the guard blocks and logs the identity verdict WITHOUT sending any signal'
+    then: 'the guard blocks and logs the identity/enablement verdict WITHOUT sending any signal'
   - id: A9
     given: 'a session id with an existing trap sentinel starts a new harness session'
     when: 'the SessionStart agent-register hook runs'
