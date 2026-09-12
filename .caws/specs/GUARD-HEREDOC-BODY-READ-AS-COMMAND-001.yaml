@@ -69,3 +69,7 @@ evidence:
     status: pass
     evidence_ref: "bats 'A1' + 'A1c' (red before the fix) with 'A1b control' green in both runs — the control uses the yaml-free foreign-payload block, so it fails if the assertion goes vacuous (an earlier spec-scope-claim version of this test passed without the fix, and the control caught it)"
     recorded_at: "2026-09-12T22:07:00.286Z"
+  - criterion_id: A2
+    status: pass
+    evidence_ref: "bats 'A2' + 'A2b'; falsified by a blanket-blank mutation (removing the sink==0 guard) which turned exactly A2 and A2b red"
+    recorded_at: "2026-09-12T22:07:00.807Z"
