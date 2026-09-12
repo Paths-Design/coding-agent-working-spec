@@ -1,0 +1,35 @@
+id: CLAIM-ORACLE-DIRECTORY-CONTAINMENT-001
+title: 'Scope-glob directory containment: a directory entry claims (and excludes) its whole subtree'
+risk_tier: 1
+mode: fix
+lifecycle_state: draft
+created_at: '2026-09-12T20:35:00.352Z'
+updated_at: '2026-09-12T20:35:00.352Z'
+created_by_session: 'session-c04418cd-a035-44a9-b26e-378d285ccad1'
+blast_radius:
+  modules:
+    - 'TODO: list one or more modules this spec touches.'
+  data_migration: false
+operational_rollback_slo: 5m
+scope:
+  in:
+    - 'TODO: list the file(s) or directories this spec authorizes.'
+  out: []
+invariants:
+  - 'TODO: describe one invariant this spec guarantees.'
+acceptance:
+  - id: A1
+    given: 'TODO'
+    when: 'TODO'
+    then: 'TODO'
+observability:
+  - 'Both matcher copies (worktree-claim-oracle.cjs and the shell-embedded CAWS_NODE_GLOB_TO_SCOPE_REGEXP in caws-state.sh) carry the same containment semantics; the parity test asserts they agree on directory and boundary cases.'
+rollback:
+  - 'Revert the implementation commit; directory-shaped entries return to exact-string matching; rerun the oracle pytest suite, the scope-guard bats suite, and caws doctor.'
+non_functional:
+  security:
+    - 'Containment closes silent under-enforcement: a file beneath an actively-claimed directory is claimed again, so foreign writes block. The empty pattern compiles to a never-matching regex rather than claiming everything, and the ''/'' boundary keeps ''pkg/dir'' from matching ''pkg/directory''.'
+contracts:
+  - name: 'scope-glob-containment'
+    type: contract-test
+    path: 'packages/caws-cli/tests/hooks/pytest/test_worktree_claim_oracle.py'
