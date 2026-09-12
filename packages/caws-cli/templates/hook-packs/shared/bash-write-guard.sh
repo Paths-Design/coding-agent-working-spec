@@ -76,6 +76,15 @@ caws_source_lib emit.sh 2>/dev/null || true
 # Best-effort source: a missing helper degrades to oracle-everything (the
 # pre-fix behavior), never a hard block.
 [[ -f "$SCRIPT_DIR/lib/write-allowlist.sh" ]] && source "$SCRIPT_DIR/lib/write-allowlist.sh"
+# shellcheck source=lib/heredoc.sh
+# GUARD-HEREDOC-BODY-READ-AS-COMMAND-001: a heredoc BODY is payload, not command
+# text, but extract_targets tokenizes the whole command string — so a body
+# containing a redirect/tee/rm verb was read as a command and routed to the
+# ownership oracle, refusing a command whose only real mutation was the file it
+# redirected into. Neutralize safelisted bodies (cat/tee) before extraction.
+# Best-effort source: a missing helper leaves the guard behaving exactly as it
+# did before this slice — unchanged behavior, never a new bypass.
+[[ -f "$SCRIPT_DIR/lib/heredoc.sh" ]] && source "$SCRIPT_DIR/lib/heredoc.sh"
 parse_hook_input
 
 # CAWS_ORACLE_SESSION_ID: the fully-resolved operating identity. Falls back to
@@ -275,6 +284,16 @@ WORST="pass"
 WORST_DETAIL=""
 WORST_KIND=""
 
+# GUARD-HEREDOC-BODY-READ-AS-COMMAND-001: extract targets from the command with
+# safelisted heredoc BODIES neutralized. Only the extractor sees the neutralized
+# text — every other decision in this guard (and the message-send short-circuit
+# above) still reads the raw command, so a body cannot hide a sibling mutation
+# and the exemption logic is unchanged.
+_CAWS_TARGET_TEXT="$COMMAND"
+if declare -F caws_blank_heredoc_bodies >/dev/null 2>&1; then
+  _CAWS_TARGET_TEXT="$(caws_blank_heredoc_bodies "$COMMAND")"
+fi
+
 escalate() {
   local rank_new rank_cur
   case "$1" in pass) rank_new=0 ;; ask) rank_new=1 ;; block) rank_new=2 ;; esac
@@ -339,7 +358,7 @@ while IFS= read -r cand; do
       fi
       ;;
   esac
-done < <(extract_targets "$COMMAND")
+done < <(extract_targets "$_CAWS_TARGET_TEXT")
 
 _BG_ID="CAWS bash-write-guard"
 command -v guard_identity >/dev/null 2>&1 && _BG_ID="$(guard_identity bash-write-guard)"
