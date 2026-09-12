@@ -8,20 +8,79 @@ updated_at: '2026-09-12T18:23:56.215Z'
 created_by_session: 'session-c04418cd-a035-44a9-b26e-378d285ccad1'
 blast_radius:
   modules:
-    - 'TODO: list one or more modules this spec touches.'
+    - 'packages/caws-cli/templates/hook-packs/shared (block-dangerous.sh, agent-register.sh, reset-danger-latch.sh)'
+    - 'packages/caws-cli/tests/hooks/bats (trap + release suites)'
+    - 'repo + template doctrine (AGENTS.md, CLAUDE.md, templates/CLAUDE.md latch sections)'
   data_migration: false
-operational_rollback_slo: 5m
+  operational_rollback_slo: 5m
 scope:
   in:
-    - 'TODO: list the file(s) or directories this spec authorizes.'
-  out: []
+    - packages/caws-cli/templates/hook-packs/shared/block-dangerous.sh
+    - packages/caws-cli/templates/hook-packs/shared/agent-register.sh
+    - packages/caws-cli/templates/hook-packs/shared/reset-danger-latch.sh
+    - packages/caws-cli/tests/hooks/bats/block-dangerous.bats
+    - packages/caws-cli/tests/hooks/bats/reset-danger-latch.bats
+    - packages/caws-cli/tests/hooks/bats/agent-register-quarantine.bats
+    - packages/caws-cli/templates/CLAUDE.md
+    - AGENTS.md
+    - CLAUDE.md
+  out:
+    - packages/caws-cli/src
+    - packages/caws-cli/dist
+    - .github/workflows
 invariants:
-  - 'TODO: describe one invariant this spec guarantees.'
+  - 'Trap state is the existing danger-latch sentinel file (danger-latch-<session>.json); no new authority surface is introduced, and the human reset script remains the only sanctioned clear path.'
+  - 'While the trap is engaged, Bash admission is deny-by-default: only a fixed read-only allowlist of single simple commands (no separators, pipes, redirects, or command substitution) and the reset invocation itself are admitted; classifier "allow" no longer admits anything on its own.'
+  - 'caws message send and caws message reply are refused with a dedicated enlist-help reason while trapped; a trapped session cannot delegate a blocked action to a peer.'
+  - 'The first non-read-only attempt while trapped escalates: the session''s agent process receives SIGTERM. The kill fires only when the agent PID identity verifies (recorded pid + start-time + comm match the live process), the target is not PID 1 and not the hook''s own process, and no other live session record references the same PID (shared-PID refusal). Any verification failure degrades to block + loud log, never to an unverified kill.'
+  - 'SessionStart reads quarantine state for the resolved session id and reports it as non-blocking additionalContext; it never kills and never blocks, so a restarted quarantined session converges to the same trap instead of a kill-restart loop.'
+  - 'Every denial while trapped and every escalation decision is recorded (sentinel JSON strike fields + vendor danger-latch log line) with session id, command, and identity verdict.'
+  - 'The reset fails closed: a reset that located zero vendor state dirs to search, or a machine-snapshot reset invoked without its env prefix, exits non-zero with the corrected command instead of reporting success-by-absence.'
 acceptance:
   - id: A1
-    given: 'TODO'
-    when: 'TODO'
-    then: 'TODO'
+    given: 'a session with an armed trap sentinel'
+    when: 'it runs a single simple read-only command (ls, cat <file>, git status, git log --oneline)'
+    then: 'the guard exits 0 and admits the command with no block decision emitted'
+  - id: A2
+    given: 'a session with an armed trap sentinel'
+    when: 'it runs a previously classifier-allowed mutating command (git commit -m x, caws worktree merge wt-x, rm <sentinel>, echo x > <sentinel>)'
+    then: 'the guard emits a block decision whose reason names the trap (not the original trigger) and the command does not run'
+  - id: A3
+    given: 'a session with an armed trap sentinel'
+    when: 'it runs a compound, piped, redirected, or command-substituted shape whose head is read-only (ls; rm x, cat $(rm x), echo x > f, cat f | sh)'
+    then: 'the guard emits a block decision (the allowlist admits single simple commands only)'
+  - id: A4
+    given: 'a session with an armed trap sentinel'
+    when: 'it runs caws message send or caws message reply with any arguments'
+    then: 'the guard emits a block decision whose reason names the enlist-help refusal specifically'
+  - id: A5
+    given: 'a session with an armed trap sentinel'
+    when: 'it runs a read-only caws verb (caws status, caws specs list)'
+    then: 'the guard exits 0 and admits the command'
+  - id: A6
+    given: 'a session with an armed trap sentinel'
+    when: 'it runs the reset-danger-latch.sh invocation for its own session'
+    then: 'the guard exits 0 (the reset exemption is preserved)'
+  - id: A7
+    given: 'a session with an armed trap sentinel and a planted agent-pid record that identity-matches a live substitute agent process'
+    when: 'it runs any non-read-only command'
+    then: 'the guard records a strike, emits the block decision first, then sends SIGTERM to the verified agent pid, and the escalation (pid, signal, reason) is logged to the vendor danger-latch log'
+  - id: A8
+    given: 'a session with an armed trap sentinel whose recorded agent pid is dead, recycled (start-time mismatch), PID 1, or shared with another live session record'
+    when: 'it runs any non-read-only command'
+    then: 'the guard blocks and logs the identity verdict WITHOUT sending any signal'
+  - id: A9
+    given: 'a session id with an existing trap sentinel starts a new harness session'
+    when: 'the SessionStart agent-register hook runs'
+    then: 'additionalContext reports the quarantine (read-only-only admission, escalation-on-attempt, human reset command) and the hook still exits 0; with no sentinel the hook emits nothing extra'
+  - id: A10
+    given: 'the machine-runtime reset script invoked without CAWS_MACHINE_RUNTIME/CAWS_PROJECT_DIR env, or any invocation that locates zero vendor state dirs'
+    when: 'it tries to clear a latch'
+    then: 'it exits non-zero, prints the corrected env-prefixed re-run command, and clears nothing'
+  - id: A11
+    given: 'a session with an armed trap sentinel and a git alias that shadows an allowlisted read-only subcommand (alias.status=!rm -rf)'
+    when: 'it runs the shadowed subcommand (git status)'
+    then: 'the guard emits a block decision (alias-shadowed subcommands are not read-only)'
 observability:
   - 'Every trap denial and escalation appends a typed record to the sentinel JSON and the vendor danger-latch log: session id, command, strike count, agent pid identity verdict, kill decision and reason.'
 rollback:
@@ -29,10 +88,14 @@ rollback:
 non_functional:
   security:
     - 'Kill escalation fires only on an identity-verified agent PID (pid + start-time + comm match, PID 1 and self excluded, shared-PID refused); no secrets are logged; the read-only allowlist admits single simple commands only.'
+  reliability:
+    - 'Trap admission fails closed: any error in the read-only predicate or identity resolution denies rather than admits; the SessionStart quarantine read fails open (advisory only) and can never block a session start.'
 contracts:
   - name: 'trap-admission'
-    type: contract-test
+    type: 'contract-test'
     path: 'packages/caws-cli/tests/hooks/bats/block-dangerous.bats'
+    description: 'While trapped: read-only single commands admitted; everything else (mutating allow-class, compounds, substitutions, redirects, enlist sends, alias-shadowed git) blocked; reset invocation exempt; escalation identity-guarded.'
   - name: 'trap-release'
-    type: contract-test
+    type: 'contract-test'
     path: 'packages/caws-cli/tests/hooks/bats/reset-danger-latch.bats'
+    description: 'Human reset clears the trap sentinel and strike state; zero-searched-dirs and env-stripped snapshot invocations exit non-zero with the corrected command instead of success-by-absence.'
