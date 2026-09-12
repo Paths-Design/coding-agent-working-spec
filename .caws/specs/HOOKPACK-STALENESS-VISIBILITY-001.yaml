@@ -25,6 +25,7 @@ invariants:
   - 'Read-only and fail-open: the check reads the runtime pointer, the runtime manifest and the installed files, emits at most one bounded context line, and emits nothing (never blocks) when the pointer, manifest, node, or any file is unavailable.'
   - 'Bounded output: at most five file names are named, with a count for the remainder, so a large drift cannot bloat session context.'
   - 'Disableable: CAWS_PACK_STALENESS_CHECK=0 silences the advisory without touching the pack.'
+  - 'Drift is decided by comparing the installed file against the pinned snapshot normalizing the install-time hook_pack_version stamp on BOTH sides (the same normalizer the CLI uses in src/init/system-runtime.ts). Hashing installed bytes against the raw manifest entry can never match: caws init stamps the project copy with the CLI pack version while the snapshot keeps the template literal, so every stock file differs by that one line. Verified exhaustively: 50 of 50 present stock files differ only by that line.'
 acceptance:
   - id: A1
     given: 'a project whose installed stock file differs from the pinned runtime manifest entry'
