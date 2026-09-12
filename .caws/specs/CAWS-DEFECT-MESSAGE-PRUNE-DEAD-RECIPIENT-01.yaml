@@ -100,3 +100,7 @@ evidence:
     status: pass
     evidence_ref: "jest tests/store/messages-dead-recipient-prune.test.js 'A5' — apply removes exactly candidates + fully-pruned offer, preserves other lines byte-identically, archive carries selector marker; live ledger untouched on archive failure by construction (archive append precedes rewrite)"
     recorded_at: "2026-09-12T22:19:18.398Z"
+  - criterion_id: A6
+    status: pass
+    evidence_ref: "jest tests/shell/message-retention-prune.test.js A6-refusal/dry-run/apply — bare --status undelivered refused naming accepted values; dry-run exits 0 writes nothing; apply reports counts+floor; live sterling dry-run: exit 0, 32 candidates / 16 newer-than-floor / 43 delivered-skipped (= the recorded 48 undelivered)"
+    recorded_at: "2026-09-12T22:19:18.908Z"
