@@ -92,3 +92,7 @@ evidence:
     status: pass
     evidence_ref: "jest tests/kernel/unit/doctor-hook-growth-classification.test.ts 'A2: growth rows render as info; stale rows keep the body-drift warning naming only themselves' incl. AMBIGUOUS wording + READ-the-deltas repair assertions"
     recorded_at: "2026-09-12T23:38:42.259Z"
+  - criterion_id: A3
+    status: pass
+    evidence_ref: "jest tests/kernel/unit/doctor-hook-growth-classification.test.ts 'A3: version lag downgrades to info only when every drift row is growth' (all-growth info w/ growth_rows data; +unobserved and stamp-only stay warning)"
+    recorded_at: "2026-09-12T23:38:42.832Z"
