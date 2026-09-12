@@ -65,3 +65,7 @@ evidence:
     status: pass
     evidence_ref: bats INTERSECT A2 (bare git = ask-class denies while trapped)
     recorded_at: "2026-09-12T20:33:02.274Z"
+  - criterion_id: A3
+    status: pass
+    evidence_ref: bats INTERSECT A3 (ls/git status still admit) + 255/255 full tree
+    recorded_at: "2026-09-12T20:33:03.549Z"
