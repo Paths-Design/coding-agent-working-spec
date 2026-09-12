@@ -37,6 +37,9 @@ describe('global-home doctor rules (CAWS-DESIGN-GLOBAL-IDENTITY-HOME-001 A4)', (
   test('rule ids are the stable strings the remediation text names', () => {
     expect(DOCTOR_RULES.GLOBAL_HOME_UNMANAGED_STATE).toBe('doctor.global_home.unmanaged_state');
     expect(DOCTOR_RULES.GLOBAL_HOME_STAMP_MISSING).toBe('doctor.global_home.stamp_missing');
+    expect(DOCTOR_RULES.GLOBAL_HOME_RECOGNIZED_LEGACY_STATE).toBe(
+      'doctor.global_home.recognized_legacy_state'
+    );
   });
 
   test('a stamped home with only known entries stays silent', () => {
@@ -170,5 +173,65 @@ describe('global-home doctor rules (CAWS-DESIGN-GLOBAL-IDENTITY-HOME-001 A4)', (
         message: expect.stringContaining('modified launcher'),
       }),
     ]);
+  });
+});
+
+// =========================================================================
+// CAWS-DEFECT-DOCTOR-NO-DISCHARGE-WARNINGS-01 — recognized legacy entries.
+// `sessions` at the global-home root is pre-v11 session-log output the
+// current CLI no longer writes (session logs are repo-local). Warning on it
+// demanded a review no governed command could perform and buried genuinely
+// unknown entries. It now renders as a distinct INFO finding; the warning is
+// reserved for entries with unknown provenance.
+// =========================================================================
+
+describe('global-home recognized legacy entries (CAWS-DEFECT-DOCTOR-NO-DISCHARGE-WARNINGS-01)', () => {
+  function homeWith(entries: readonly string[]) {
+    return input(
+      fsObs({
+        globalHomeObservation: {
+          kind: 'present',
+          root: '/fixture/machine',
+          stampPresent: true,
+          entries,
+          runtime: { status: 'verified', digest: 'a'.repeat(64) },
+        },
+      })
+    );
+  }
+
+  test('A5: a home with sessions AND an unknown entry warns only on the unknown one and infos the legacy one', () => {
+    const report = inspectProjectState(homeWith(['state', 'sessions', 'mystery-dir']));
+    const unmanaged = report.findings.find(
+      (f) => f.rule === DOCTOR_RULES.GLOBAL_HOME_UNMANAGED_STATE
+    );
+    expect(unmanaged?.severity).toBe('warning');
+    expect(unmanaged?.data).toMatchObject({ foreign_entries: ['mystery-dir'] });
+    expect(unmanaged?.message).not.toContain('sessions');
+
+    const legacy = report.findings.find(
+      (f) => f.rule === DOCTOR_RULES.GLOBAL_HOME_RECOGNIZED_LEGACY_STATE
+    );
+    expect(legacy?.severity).toBe('info');
+    expect(legacy?.data).toMatchObject({ legacy_entries: ['sessions'] });
+    expect(legacy?.message).toContain('prior CLI generation');
+  });
+
+  test('A6: a home whose only extra entry is sessions does not warn', () => {
+    const report = inspectProjectState(homeWith(['state', 'sessions']));
+    expect(rules(report)).not.toContain(DOCTOR_RULES.GLOBAL_HOME_UNMANAGED_STATE);
+    const legacy = report.findings.find(
+      (f) => f.rule === DOCTOR_RULES.GLOBAL_HOME_RECOGNIZED_LEGACY_STATE
+    );
+    expect(legacy?.severity).toBe('info');
+    expect(report.summary.warnings).toBe(0);
+  });
+
+  test('the legacy finding names no command (informational provenance, not a remedy)', () => {
+    const report = inspectProjectState(homeWith(['sessions']));
+    const legacy = report.findings.find(
+      (f) => f.rule === DOCTOR_RULES.GLOBAL_HOME_RECOGNIZED_LEGACY_STATE
+    );
+    expect(legacy?.narrowRepair ?? '').not.toMatch(/\bcaws\s+\w|\bgit\s+\w/);
   });
 });
