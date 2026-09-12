@@ -36,3 +36,10 @@ acceptance:
     then: 'reproducible comparison checks and CAWS gate outcomes are recorded and the source work is committed cleanly.'
 non_functional: {}
 contracts: []
+evidence:
+  - criterion_id: A1
+    status: pass
+    evidence_ref: "120-path digest inventory at /tmp/caws-sterling-hook-harvest.json; pinned source revisions and reproduction in docs/audits/sterling-hook-harvest.md"
+    recorded_at: "2026-09-12T23:42:13.283Z"
+    artifact_path: docs/audits/sterling-hook-harvest.md
+    commit_sha: bfc35683
