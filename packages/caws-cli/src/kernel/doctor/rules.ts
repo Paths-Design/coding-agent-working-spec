@@ -68,11 +68,20 @@ export const DOCTOR_RULES = {
    * worktree_created event was appended to the immutable hash chain, then the
    * worktree_bound event failed and the transaction rolled back the registry +
    * filesystem writes — leaving an event recording a worktree the control plane
-   * does not reflect. WORKTREE-DOCTOR-HALF-STATE-001. Severity WARN — it is
-   * reconcilable governance residue (the audit record is honest), not active
-   * corruption; the repair is a later gated slice, so the diagnostic is a
-   * pointer, not a command. Suppressed when a later `worktree_destroyed` event
-   * for the same name closes the lifecycle, or when the worktree is live.
+   * does not reflect. WORKTREE-DOCTOR-HALF-STATE-001. Suppressed when a later
+   * `worktree_destroyed` event for the same name closes the lifecycle, or when
+   * the worktree is live.
+   *
+   * CAWS-DEFECT-DOCTOR-NO-DISCHARGE-WARNINGS-01: severity is now conditional.
+   * WARN (the reconcilable-residue case) when any physical remainder exists or
+   * any tombstone observation is missing — no governed command can close this
+   * class, so an unverifiable orphan stays visible as actionable-looking
+   * residue. INFO (verifiable tombstone) when the name is observably dead
+   * everywhere: registry absent, spec binding absent, destroy event absent,
+   * recorded branch absent from the observed local refs, recorded path
+   * observed absent, and no linked worktree listed at the recorded path. A
+   * warning nobody can discharge trains operators to ignore doctor; the
+   * tombstone records the verification without demanding a remedy.
    */
   WORKTREE_EVENT_WITHOUT_CONTROL_PLANE_BINDING:
     'doctor.worktree.event_without_control_plane_binding',
@@ -294,6 +303,16 @@ export const DOCTOR_RULES = {
   HOOKS_SYSTEM_RUNTIME_INVALID: 'doctor.hooks.system_runtime_invalid',
   HOOKS_SYSTEM_LEGACY_WIRING: 'doctor.hooks.system_legacy_wiring',
   GLOBAL_HOME_UNMANAGED_STATE: 'doctor.global_home.unmanaged_state',
+  /**
+   * CAWS-DEFECT-DOCTOR-NO-DISCHARGE-WARNINGS-01: entries in the machine's
+   * ~/.caws global home that are RECOGNIZED legacy output of a prior CLI
+   * generation (`sessions` — pre-v11 machine-home session logs; current
+   * session logs are repo-local). Distinct from unmanaged state: the
+   * provenance is known, the current CLI neither reads nor writes these, and
+   * no review is demanded. Severity INFO — names the legacy provenance so a
+   * future reader knows what the bytes are; keeping them is safe.
+   */
+  GLOBAL_HOME_RECOGNIZED_LEGACY_STATE: 'doctor.global_home.recognized_legacy_state',
   /** Existing home with neither a legacy migration stamp nor a verified runtime. */
   GLOBAL_HOME_STAMP_MISSING: 'doctor.global_home.stamp_missing',
   GLOBAL_HOME_UNREADABLE: 'doctor.global_home.unreadable',

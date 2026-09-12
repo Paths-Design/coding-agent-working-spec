@@ -700,6 +700,63 @@ export function inspectProjectState(input: DoctorInput): DoctorReport {
       if (hasLiveRegistry || hasSpecBinding || wasDestroyed) continue;
       // Orphan: created-event with no live control-plane representation.
       reportedOrphans.add(name);
+      // CAWS-DEFECT-DOCTOR-NO-DISCHARGE-WARNINGS-01 — verifiable-tombstone
+      // downgrade. A warning nobody can discharge (destroy/prune/repair
+      // refuse this class by design; hand-forging chain events is tampering)
+      // trains operators to ignore doctor. When EVERY physical residue
+      // observation is present-and-absent — the recorded branch is absent
+      // from the observed local refs, the recorded path is observed absent,
+      // no linked worktree is listed at the recorded path — the orphan is a
+      // verified-dead tombstone and renders as INFO. The predicate is
+      // conjunctive over observations that must ALL be available: undefined
+      // observations, a name missing from the path map, or a created-event
+      // without a recorded branch/path keep the warning (unobserved is not
+      // absent — the §2f degrade-elsewhere pattern). A linked worktree still
+      // listed at the recorded path (un-pruned git metadata for a directory
+      // that is gone) also keeps the warning: something physical remains.
+      const recordedBranch =
+        typeof d?.branch === 'string' && d.branch.length > 0 ? d.branch : name;
+      const recordedPath = typeof d?.path === 'string' && d.path.length > 0 ? d.path : undefined;
+      const branchObservedAbsent =
+        input.localBranchRefs !== undefined &&
+        !input.localBranchRefs.includes(`refs/heads/${recordedBranch}`);
+      const pathObservedAbsent =
+        recordedPath !== undefined &&
+        input.filesystem?.createdWorktreePathExistsByName !== undefined &&
+        input.filesystem.createdWorktreePathExistsByName[name] === false;
+      const noLinkedWorktreeAtRecordedPath =
+        input.gitWorktrees !== undefined &&
+        (recordedPath === undefined ||
+          !input.gitWorktrees.some((wt) => wt.path === recordedPath));
+      const verifiablyDead =
+        recordedPath !== undefined &&
+        branchObservedAbsent &&
+        pathObservedAbsent &&
+        noLinkedWorktreeAtRecordedPath;
+      if (verifiablyDead) {
+        findings.push(
+          finding(
+            DOCTOR_RULES.WORKTREE_EVENT_WITHOUT_CONTROL_PLANE_BINDING,
+            'info',
+            `Event log records worktree_created for "${name}" (event seq ${ev.seq}); the control plane rolled back and nothing verifiably remains — no registry entry, no spec binding, no branch "${recordedBranch}", and no directory or linked worktree at the recorded path. Informational tombstone of a rolled-back transaction; the creation record stays as honest audit history.`,
+            {
+              subject: name,
+              narrowRepair:
+                'Verified-dead residue: every control-plane and physical observation is absent, so there is nothing left to reconcile and no action to perform. The chained creation event is immutable audit history and intentionally stays; this informational finding records the verification.',
+              data: {
+                worktree_name: name,
+                created_event_seq: ev.seq,
+                created_event_hash: ev.event_hash,
+                ...(typeof ev.spec_id === 'string' ? { spec_id: ev.spec_id } : {}),
+                verified_dead: true,
+                branch_observed_absent: recordedBranch,
+                path_observed_absent: recordedPath,
+              },
+            }
+          )
+        );
+        continue;
+      }
       findings.push(
         finding(
           DOCTOR_RULES.WORKTREE_EVENT_WITHOUT_CONTROL_PLANE_BINDING,
@@ -712,7 +769,7 @@ export function inspectProjectState(input: DoctorInput): DoctorReport {
             // created-event is immutable audit history, so the only correct
             // "repair" is authority reconciliation, never a mechanical prune.
             narrowRepair:
-              'Governance residue from a partially-failed worktree creation. Automatic repair is intentionally refused for this class: the worktree_created event is immutable audit history, so no control-plane mutation is safe — reconcile authority manually (recreate the binding or accept the residue) rather than deleting the record.',
+              'Governance residue from a partially-failed worktree creation. Automatic repair is intentionally refused for this class: the worktree_created event is immutable audit history, so no control-plane mutation is safe — reconcile authority manually (recreate the binding or accept the residue) rather than deleting the record. Residue that is verifiably dead everywhere (branch, directory, and worktree listing all observed absent) is reported separately as an informational tombstone.',
             data: {
               worktree_name: name,
               created_event_seq: ev.seq,
@@ -1374,7 +1431,18 @@ export function inspectProjectState(input: DoctorInput): DoctorReport {
   }
   if (globalHome?.kind === 'present') {
     const known = new Set(['state', 'surfaces', 'lib', 'bin']);
-    const foreign = globalHome.entries.filter((e) => !known.has(e));
+    // CAWS-DEFECT-DOCTOR-NO-DISCHARGE-WARNINGS-01: entries the CLI itself
+    // wrote in a PRIOR generation are recognized legacy output, not unmanaged
+    // state. `sessions` is pre-v11 machine-home session-log output; current
+    // session logs are repo-local (.caws/sessions/). Warning on it demands a
+    // review the current CLI cannot perform and buries genuinely unknown
+    // entries. If a future CLI generation writes ~/.caws/sessions again, it
+    // belongs in `known`, not here.
+    const recognizedLegacy = new Set(['sessions']);
+    const foreign = globalHome.entries.filter(
+      (e) => !known.has(e) && !recognizedLegacy.has(e)
+    );
+    const legacy = globalHome.entries.filter((e) => recognizedLegacy.has(e));
     if (globalHome.runtime.status === 'invalid') {
       findings.push(
         finding(
@@ -1413,6 +1481,21 @@ export function inspectProjectState(input: DoctorInput): DoctorReport {
             narrowRepair:
               'Review and preserve the named entries before moving them outside the managed home; do not delete unknown data.',
             data: { foreign_entries: [...foreign] },
+          }
+        )
+      );
+    }
+    if (legacy.length > 0) {
+      findings.push(
+        finding(
+          DOCTOR_RULES.GLOBAL_HOME_RECOGNIZED_LEGACY_STATE,
+          'info',
+          `Recognized legacy entries in the global home (${globalHome.root}): ${legacy.join(', ')}. These are session-log output written by a prior CLI generation — the current CLI keeps session logs repo-local under .caws/sessions/ and no longer writes them here.`,
+          {
+            subject: globalHome.root,
+            narrowRepair:
+              'No defect — recognized legacy residue with known provenance. Keeping it is safe; the current CLI neither reads nor writes it. If the history matters, review the contents and archive them outside the managed home; otherwise leave them in place.',
+            data: { legacy_entries: [...legacy] },
           }
         )
       );
