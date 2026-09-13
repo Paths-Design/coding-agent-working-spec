@@ -399,9 +399,12 @@ describe('event-orphan verifiable-tombstone downgrade (CAWS-DEFECT-DOCTOR-NO-DIS
   });
 
   test.each([
-    ['no localBranchRefs observation', (o: ReturnType<typeof tombstoneObservations>) => ({ ...o, localBranchRefs: undefined })],
+    // "No observation" means the key is ABSENT, not present-as-undefined —
+    // exactOptionalPropertyTypes enforces that distinction, and the kernel's
+    // missing-vs-malformed doctrine wants absence anyway.
+    ['no localBranchRefs observation', (o: ReturnType<typeof tombstoneObservations>) => { const { localBranchRefs: _lbr, ...rest } = o; return rest; }],
     ['name missing from the created-path map', (o: ReturnType<typeof tombstoneObservations>) => ({ ...o, filesystem: fsObs({ createdWorktreePathExistsByName: {} }) })],
-    ['no gitWorktrees observation', (o: ReturnType<typeof tombstoneObservations>) => ({ ...o, gitWorktrees: undefined })],
+    ['no gitWorktrees observation', (o: ReturnType<typeof tombstoneObservations>) => { const { gitWorktrees: _gw, ...rest } = o; return rest; }],
   ])(
     'A4: %s keeps the warning — unobserved never downgrades',
     (_label, mutate) => {

@@ -134,7 +134,10 @@ const CLEANUP_LEAF_EXPECTATIONS = [
     group: 'message',
     leaf: 'prune',
     options: ['--status', '--older-than-ms', '--include', '--exclude', '--apply', '--json'],
-    terms: ['dry-run by default', 'delivered', 'undelivered inbox messages are preserved'],
+    // cb2a364a reworded prune help to the dead-recipient-proof guarantee;
+    // the preservation claim now reads "every recipient that could still
+    // consume ... is preserved" — pin the current wording, not the old phrase.
+    terms: ['dry-run by default', 'delivered', 'every recipient that could still consume'],
   },
 ];
 

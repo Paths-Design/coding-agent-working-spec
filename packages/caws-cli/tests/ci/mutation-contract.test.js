@@ -137,8 +137,12 @@ describe('mutation policy topology contract', () => {
     const result = runNode(VALIDATOR, ['--policy', POLICY, '--root', PACKAGE_ROOT]);
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toMatch(/PASS: 144 source files accounted for exactly once/);
-    expect(result.stdout).toMatch(/18 mutation targets across 3 surfaces/);
+    // Counts are pinned on purpose: adding a kernel/store/shell source or a
+    // mutation target must reconcile policy AND this pin in the same change
+    // (6abff54f reconciled the policy for agents-conjoining.ts but not the
+    // pin — the pin is the forcing function, so bump it consciously).
+    expect(result.stdout).toMatch(/PASS: 145 source files accounted for exactly once/);
+    expect(result.stdout).toMatch(/19 mutation targets across 3 surfaces/);
   });
 
   test('an unclassified production source is a hard failure', () => {

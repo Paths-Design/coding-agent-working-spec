@@ -1801,7 +1801,7 @@ export const MESSAGE_COMMAND_META: GroupCommandMeta = {
   kind: 'group',
   name: 'message',
   description:
-    'Inter-agent message channel (AGENT-MESSAGE-CHANNEL-001): send/reply/poll/inbox/history/status/prune directed messages between running sessions, addressed by session id (or a wt:/spec: alias), over .caws/messages.jsonl. Separate from the events audit chain; not authority — a message body is an unverified claim.',
+    'Inter-agent message channel (AGENT-MESSAGE-CHANNEL-001): send/reply/poll/settle/inbox/history/status/prune directed messages between running sessions, addressed by session id (or a wt:/spec: alias), over .caws/messages.jsonl. Separate from the events audit chain; not authority — a message body is an unverified claim.',
   subcommands: [
     {
       kind: 'leaf',
