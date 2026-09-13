@@ -79,3 +79,7 @@ evidence:
     status: pass
     evidence_ref: "npx jest tests/ci/mutation-contract.test.js (validator 145/19, pin matches)"
     recorded_at: "2026-09-13T02:03:11.773Z"
+  - criterion_id: A4
+    status: pass
+    evidence_ref: npx jest tests/shell/reprieve-relative-expiry.test.js with ambient DSH_SESSION_ID (33/33 green in-harness)
+    recorded_at: "2026-09-13T02:03:12.365Z"
