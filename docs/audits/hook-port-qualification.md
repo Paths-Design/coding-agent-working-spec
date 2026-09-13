@@ -158,3 +158,118 @@ No fresh native harness approval UI, native tool non-execution, hostile filesyst
 race, or global runtime adoption has been verified by this chunk. Before claiming
 those, capture the native refusal and absence of its tool-result event, the selected
 installed digests, and authority/path state at that same invocation boundary.
+
+## Transcript fidelity and acceleration qualification
+
+The installed renderer now consumes seven surface adapters, including the existing
+Kimi wire contract. The Codex adapter still filters injected user-role material
+using native content provenance and excludes internal analysis; its selected
+machine seam delegates to shared normalization and remains callable directly.
+Tool source/output records retain full Codex and Bash payloads, with explicit
+length/truncation fields. Inner `functions.exec` calls are an optional source
+index: comments/string literals are excluded, runtime template interpolation is
+unresolved, and every projected action says `execution: not_observed`. Even an
+unexecuted conditional contains syntax; the index does not prove it ran.
+
+Turn context carries source-declared parentage with `authority: none`. Hook
+sidecars are session-filtered and carry handler-return/delivery boundaries.
+Malformed JSONL is diagnosed; the parser does not salvage an embedded object
+from damaged text. The selected machine audit directory feeds the render.
+Stop's own hook-return record remains available only to a later reconstruction.
+
+A missing or empty transcript cannot erase existing human history, even when
+new hook sidecars exist. `.render-state.json` names `retained_missing_transcript`
+or `retained_empty_source`, sets `outputs_current: false`, and lists input/output
+hashes. Writers take an OS lock before input reads; each turn replacement is
+atomic. This is not a transactional snapshot across all turn files for readers.
+An explicitly configured `CAWS_TRANSCRIPT_DATABASE` supports OpenCode/ZCode
+SQLite projection in one read transaction, with session-qualified rows and an
+atomic JSONL projection/receipt. Empty results replace projected bytes with an
+empty file and do not reuse an old projection as a hit. Live database schemas,
+compressed transcript discovery, and native subagent-store discovery remain
+unverified; parent metadata is not a census of child sessions.
+
+### Observed artifacts
+
+Scratch root remains `/private/tmp/caws-hook-qualification-20260912/`.
+
+- `fidelity-final/selection-3a68y0mo/repo/.caws/sessions/codex/turn-001.json`
+  contains the 227-character raw program and 13,027-character error output,
+  `is_error: true`, `output_truncated: false`, and parent `parent-session`
+  labeled metadata with no authority. `schema-validation.json` is
+  `{valid:true,errors:null}` with undeclared contract fields forbidden.
+- `fidelity-final/selection-f5tdj6h9/.../codex/turn-001.json` contains the new
+  `guard-fixture` sidecar, `status: blocked`, `observation_boundary: handler_return`,
+  and `delivery: not_observed`. The foreign-session sidecar is absent.
+- `fidelity-surfaces-after/selection-*/surface-*.command.json` retains the six
+  other installed surface cases. The first run exposed Kimi's overly broad
+  timestamp matcher swallowing DSH rows; the repaired matcher preserves both.
+- `fidelity-database-final/selection-kidwngt8/repo/.caws/sessions/{opencode,zcode}/`
+  retains projections, receipts, turns and render-state. After source-session
+  deletion, the projection is empty and preserved turns are explicitly stale.
+  The database byte hash remained unchanged during the read-only render.
+- `fidelity-context-final/selection-*/codex-fidelity.command.json` is the final
+  Codex check after repairing direct adapter imports and the unborn-branch
+  `HEAD\nunknown` capture. The fixture now records branch `main`.
+
+`python3 .../test_installed_session_fidelity.py InstalledSessionFidelity -v`
+with the scratch-root environment passed the four initial scenarios (seven
+surfaces), followed by passing targeted database and final Codex scenarios.
+The existing renderer pytest suite passed all 48 checks using the canonical
+`packages/caws-cli/tests/hooks/pytest/.venv/bin/python` (system Python lacks
+pytest). The 39-case adapter run passed 38 and exposed a direct-adapter import
+regression; after its repair, that exact failed test passed on a targeted rerun.
+No claim that the initial full run was green is made.
+
+### Daemon adoption refused by runtime counterexamples
+
+Command: `python3 scripts/hook-experiments/qualify-render-daemon.py
+--candidate-hooks ../sterling/.caws/hooks --output <scratch>/daemon-candidate-runtime`
+(using the absolute Sterling path in the retained argv). The sandbox denied the
+first loopback bind; the isolated rerun with loopback permission exited 0.
+That exit means all four falsification scenarios reproduced, not adoption success.
+`daemon-candidate-runtime/qualification.json` reports `adoption: refused`:
+
+- A sidecar append returned `ok 2 0 cached`; output hash stayed
+  `e41cdd1fbf01dedd05fad900e2f354df0f3a42c2a5060ff357c5d18acd4cb458` and the new
+  outcome was absent.
+- A corrupted turn file returned `ok 3 0 cached` and retained the corruption.
+- Changed source bytes with preserved mtime returned `ok 4 0 cached`.
+- An expired lease naming an unrelated experiment-owned child caused that child
+  to exit -15. No live agent PID or lease was used.
+
+The daemon/client were not installed or enabled. Before adoption, require code,
+sidecar and output content hashes, no unbound PID reaping, and serialized fallback
+writers, then replay timeout, concurrent writer and real process-identity cases.
+Those latter cases and native latency were not verified. An idle lease alone
+never establishes process identity or ownership.
+
+`qualify-transcript-cache.py` separately compared the retained in-process parser
+cache against fresh parsing: cold, unchanged, append, same-size/mtime rewrite,
+truncate, inode replacement, partial line, completed partial line, and adapter
+failure rollback all matched (exit 0). `transcript-cache/qualification.json`
+contains event hashes and timings. The unchanged synthetic 1,000-row input took
+0.34 ms cached versus 5.24 ms fresh in one measurement; this is neither a native
+hook latency result nor a benchmark distribution. No warm daemon was adopted.
+
+## Corpus replay
+
+`replay-terminal-corpus.py` streamed all 265,615 records (1,048,757,243 bytes),
+SHA256 `e6331a98ed474acaa5d8ace090366e442b9ea46843a3eab5d18aff03c2cf50b8`.
+`corpus-replay-final/replay.json` records the exact command, classifier digest,
+census and latency. The deterministic harness/outcome/length sample contains
+698 occurrences: 598 allow, 98 ask, 2 deny; all returned, none timed out.
+23 attempted context probes were replaced with explicit unavailable context.
+Captured cwd, Git index, authority, adapters and environment were not restored.
+These are text classifications, not historical enforcement verdicts or labels.
+No false-positive/negative rate follows from historical success/denial counts.
+
+The replay uses command text only as function input. Process/write operations
+are refused by a worker audit hook; context probes cannot run Git or consume a
+trusted-init token. `test_replay_boundary.py -v` exited 0: a synthetic captured
+`touch` left its sentinel absent, and an injected classifier attempting a real
+file write was observed as `execution_attempt_refused`. Byte offsets/hashes in
+`sample.json` permit local review without copying private commands into Git.
+The first replay runner used the wrong return shape and produced 698 harness
+AttributeErrors; those results are invalid for classifier assessment. The corrected
+run above exited 0 and all 698 rows have `status: classified`.

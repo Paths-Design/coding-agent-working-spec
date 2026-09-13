@@ -72,12 +72,29 @@ _session_canonical_root() {
 CAWS_ROOT="$(_session_canonical_root)"
 
 LOG_DIR="${CAWS_ROOT}/.caws/sessions/${SESSION_ID}"
+if [[ -L "$CAWS_ROOT/.caws" || -L "$CAWS_ROOT/.caws/sessions" || -L "$LOG_DIR" ]]; then
+  echo "[session-log] symlink session directory refused; no render" >&2
+  exit 0
+fi
 mkdir -p "$LOG_DIR"
 
 META_FILE="$LOG_DIR/.meta.json"
 RENDERER="$SCRIPT_DIR/session_log_renderer.py"
 
 resolve_transcript() {
+  # An explicitly configured durable store precedes temporary rolling tails.
+  # Error/empty receipts are not cache hits; never fall back to an old projection.
+  if [[ -n "${CAWS_TRANSCRIPT_DATABASE:-}" && ( "${CAWS_AGENT_SURFACE:-}" == opencode || "${CAWS_AGENT_SURFACE:-}" == zcode ) ]]; then
+    local projection="$LOG_DIR/.transcript-projection.jsonl"
+    if python3 "$SCRIPT_DIR/lib/transcript-store.py" --surface "$CAWS_AGENT_SURFACE" \
+      --database "$CAWS_TRANSCRIPT_DATABASE" --session "$SESSION_ID" --output "$projection" \
+      > "$LOG_DIR/.transcript-projection.receipt.json"; then
+      printf '%s\n' "$projection"
+    else
+      echo "[session-log] durable transcript source failed; prior projection is not current" >&2
+    fi
+    return
+  fi
   if [[ -n "$TRANSCRIPT_PATH" ]] && [[ -f "$TRANSCRIPT_PATH" ]]; then
     printf '%s\n' "$TRANSCRIPT_PATH"
     return
@@ -150,7 +167,7 @@ render_session_output() {
   local branch head_sha dirty_count started_at model start_sha
 
   if cd "$CWD" 2>/dev/null && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+    branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null) || branch="detached"
     head_sha=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
     dirty_count=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
   else
@@ -179,7 +196,9 @@ render_session_output() {
     "$head_sha" \
     "$dirty_count" \
     "$start_sha" \
-    "$transcript"
+    "$transcript" \
+    "${CAWS_LOG_DIR:-${CAWS_ROOT}/${CAWS_VENDOR_DIR}/logs}/audit.log" \
+    "$LOG_DIR/hook-events.jsonl"
 }
 
 handle_session_start() {
@@ -187,7 +206,7 @@ handle_session_start() {
   model="${HOOK_MODEL:-unknown}"
   source="${HOOK_SOURCE:-unknown}"
   if cd "$CWD" 2>/dev/null && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+    branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null) || branch="detached"
     head_sha=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
     dirty_count=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
   else

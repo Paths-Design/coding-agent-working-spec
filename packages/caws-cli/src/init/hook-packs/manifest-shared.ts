@@ -424,7 +424,7 @@ import { isAdapterCoveredSurface } from './types';
 // consumer of the signal believing nothing changed. Bump it WITH the template
 // change; tests/init/pack-fingerprint.test.js fails closed otherwise.
 // Hook port qualification: shared execution records and session-cache custody.
-export const SHARED_PACK_VERSION = 70;
+export const SHARED_PACK_VERSION = 71;
 
 /**
  * The vendored TELEMETRY rows: the turn-log fold (session-log.sh +
@@ -560,6 +560,66 @@ export const SHARED_PACK: HookPackV1 = {
     },
 
     // -- Shared libraries --
+    {
+      destPath: '.caws/hooks/lib/transcript-store.py',
+      sourcePath: 'lib/transcript-store.py',
+      executable: false,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/harness_claude.py',
+      sourcePath: 'lib/harness_claude.py',
+      executable: false,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/harness_codex.py',
+      sourcePath: 'lib/harness_codex.py',
+      executable: false,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/harness_common.py',
+      sourcePath: 'lib/harness_common.py',
+      executable: false,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/harness_dsh.py',
+      sourcePath: 'lib/harness_dsh.py',
+      executable: false,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/harness_kimi.py',
+      sourcePath: 'lib/harness_kimi.py',
+      executable: false,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/harness_opencode.py',
+      sourcePath: 'lib/harness_opencode.py',
+      executable: false,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/harness_qwen.py',
+      sourcePath: 'lib/harness_qwen.py',
+      executable: false,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/harness_zcode.py',
+      sourcePath: 'lib/harness_zcode.py',
+      executable: false,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/session-log.schema.json',
+      sourcePath: 'lib/session-log.schema.json',
+      executable: false,
+      managed: true,
+    },
     {
       destPath: '.caws/hooks/lib/bash-mutation-targets.sh',
       sourcePath: 'lib/bash-mutation-targets.sh',

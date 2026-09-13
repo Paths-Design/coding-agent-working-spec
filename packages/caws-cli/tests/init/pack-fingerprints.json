@@ -1,15 +1,15 @@
 {
   "shared": {
-    "version": 70,
-    "fingerprint": "2e8ec2f6b09c6341b7f2642511e446e678b82712cd2111c8deb865cc84423d4f"
+    "version": 71,
+    "fingerprint": "a7a5d6898475e5b369dd1eef6d9c44aecf0e309b866a2f0edab5f0d5660b2643"
   },
   "claude-code": {
     "version": 22,
     "fingerprint": "e78a7e1c964c75f16a95866bcb0be499196f1afebe08715ffd7a32c634974eea"
   },
   "codex": {
-    "version": 23,
-    "fingerprint": "bf0f5b2d653a72c99080ece74c9518e07a32c1a7eb5e66da6434a81bee4455d3"
+    "version": 24,
+    "fingerprint": "4ea0cb7e4f65bd3db40004256733e4ad353f7bb93aa92053d73d54d772b886ab"
   },
   "dsh": {
     "version": 3,
