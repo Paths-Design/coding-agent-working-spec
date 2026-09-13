@@ -67,3 +67,9 @@ evidence:
     recorded_at: "2026-09-13T02:09:29.267Z"
     artifact_path: /private/tmp/caws-hook-qualification-20260912/sensitivity-core/summary.json
     commit_sha: "453a4f5f"
+  - criterion_id: A2
+    status: pass
+    evidence_ref: "Foreign-owner refusals, allowed copy-source controls, bypassPermissions blocks, normalized path projections and shared lexer counterexamples. See docs/audits/hook-port-qualification.md."
+    recorded_at: "2026-09-13T02:09:30.461Z"
+    artifact_path: /private/tmp/caws-hook-qualification-20260912/governance-projections-after
+    commit_sha: "453a4f5f"
