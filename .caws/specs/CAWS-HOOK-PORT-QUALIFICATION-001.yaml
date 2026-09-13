@@ -60,3 +60,10 @@ contracts:
   - name: 'hook-port-qualification'
     type: behavior
     path: 'docs/audits/hook-port-qualification.md'
+evidence:
+  - criterion_id: A1
+    status: pass
+    evidence_ref: "Installed seven-surface selection/return custody, read-only describe, source-digest sensitivity; delivery not observed. See docs/audits/hook-port-qualification.md."
+    recorded_at: "2026-09-13T02:09:29.267Z"
+    artifact_path: /private/tmp/caws-hook-qualification-20260912/sensitivity-core/summary.json
+    commit_sha: "453a4f5f"
