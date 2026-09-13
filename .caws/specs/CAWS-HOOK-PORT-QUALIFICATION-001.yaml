@@ -79,3 +79,9 @@ evidence:
     recorded_at: "2026-09-13T02:09:31.641Z"
     artifact_path: /private/tmp/caws-hook-qualification-20260912/sensitivity-renderer-lock/summary.json
     commit_sha: "453a4f5f"
+  - criterion_id: A4
+    status: pass
+    evidence_ref: "698 inert corpus observations with no historical-label accuracy claim; optional installed policies and Git-index/sentinel custody. See docs/audits/hook-port-qualification.md."
+    recorded_at: "2026-09-13T02:09:32.885Z"
+    artifact_path: /private/tmp/caws-hook-qualification-20260912/utilities-index-custody/selection-j12mrxrw/preservation.json
+    commit_sha: "453a4f5f"
