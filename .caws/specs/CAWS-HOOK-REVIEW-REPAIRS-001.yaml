@@ -90,3 +90,11 @@ evidence:
     exit_code: 0
     artifact_path: /private/tmp/caws-hook-repairs-20260913/daemon-reloading-control/qualification.json
     commit_sha: a63a6cfae784c676728751c5c546b64e5954700d
+  - criterion_id: A5
+    status: pass
+    evidence_ref: "Full pytest and Jest, Bats process-access controls, sensitivity, gates and explicit doctor/native limitations in docs/audits/hook-port-qualification.md"
+    recorded_at: "2026-09-13T05:02:04.284Z"
+    command: node /Users/darianrosebrook/Desktop/Projects/caws/node_modules/jest/bin/jest.js --runInBand
+    exit_code: 0
+    artifact_path: /private/tmp/caws-hook-repairs-20260913/full-jest.command.json
+    commit_sha: a63a6cfae784c676728751c5c546b64e5954700d
