@@ -87,3 +87,7 @@ evidence:
     status: pass
     evidence_ref: npx jest tests/shell/presence-injection.test.js on a 9-file-drifted machine (7/7 green)
     recorded_at: "2026-09-13T02:03:12.945Z"
+  - criterion_id: A6
+    status: pass
+    evidence_ref: "npx bats tests/hooks/bats full run concurrent with npx jest (277/277, DRYRUN A1 + A7 sentinel-gated)"
+    recorded_at: "2026-09-13T02:03:13.554Z"
