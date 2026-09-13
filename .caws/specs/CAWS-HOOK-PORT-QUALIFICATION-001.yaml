@@ -73,3 +73,9 @@ evidence:
     recorded_at: "2026-09-13T02:09:30.461Z"
     artifact_path: /private/tmp/caws-hook-qualification-20260912/governance-projections-after
     commit_sha: "453a4f5f"
+  - criterion_id: A3
+    status: pass
+    evidence_ref: "Installed transcript fidelity, session filtering, SQLite controlled projection, fresh/cache equality and concurrent-writer sensitivity. Unsafe daemon rejected, native adoption unverified. See docs/audits/hook-port-qualification.md."
+    recorded_at: "2026-09-13T02:09:31.641Z"
+    artifact_path: /private/tmp/caws-hook-qualification-20260912/sensitivity-renderer-lock/summary.json
+    commit_sha: "453a4f5f"
