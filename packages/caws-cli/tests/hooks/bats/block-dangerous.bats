@@ -447,19 +447,23 @@ _wait_for_sentinel_stamp() {
     fail "sacrificial agent process survived the denied attempt"
   fi
   # The wrapper can die at SIGTERM before the guard finishes writing the
-  # escalation record — poll for the record before asserting on it.
+  # escalation record — poll for the record before asserting on it. Gate on
+  # the SENTINEL stamp (the asserted state), never the log: the guard writes
+  # its log event before jq-rewriting the sentinel fields, so a log-gated
+  # wait can break inside that window and read an unstamped sentinel.
   local escalated=""
   local i
   for i in $(seq 1 25); do
-    if grep -q '"verdict":"escalated"' "$CAWS_TEST_REPO/.claude/logs/danger-latch-escalations.log" 2>/dev/null; then
+    if [ -n "$(jq -r '.trap_escalated_pid // ""' "$sentinel" 2>/dev/null)" ]; then
       escalated=1
       break
     fi
     sleep 0.2
   done
   if [[ -z "$escalated" ]]; then
-    fail "escalation record never appeared in the audit log"
+    fail "escalation stamp never appeared on the sentinel"
   fi
+  grep -q '"verdict":"escalated"' "$CAWS_TEST_REPO/.claude/logs/danger-latch-escalations.log"
   # The log + sentinel stamps are the oracle: they exist only on a FIRED kill.
   [ "$(jq -r '.trap_escalated_pid // ""' "$sentinel")" = "$kpid" ]
 }
@@ -643,8 +647,14 @@ _edit_env() { jq -nc --arg s "$1" --arg f "$2" '{tool_name:"Edit",tool_input:{fi
   local kpid
   kpid="$(_run_under_sacrificial_agent "dryrun" "$arm_env" "$attempt_env")"
   local i
+  # Gate on the SENTINEL stamp, not the escalations log: the guard writes the
+  # dryrun log event BEFORE jq-rewriting trap_dryrun_pid onto the sentinel
+  # (block-dangerous.sh DANGER-LATCH-TRAP-KILL-DRYRUN-001), so a log-gated
+  # wait can break inside that window and read the sentinel before the stamp
+  # lands — observed as a one-in-two-runs flake under full-suite load. Polling
+  # the asserted state itself makes the wait immune to the write order.
   for i in $(seq 1 50); do
-    grep -q '"verdict":"dryrun"' "$CAWS_TEST_REPO/.claude/logs/danger-latch-escalations.log" 2>/dev/null && break
+    [ -n "$(jq -r '.trap_dryrun_pid // ""' "$sentinel" 2>/dev/null)" ] && break
     sleep 0.2
   done
   [ "$(jq -r '.trap_dryrun_pid // ""' "$sentinel")" = "$kpid" ]
