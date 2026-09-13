@@ -26,6 +26,8 @@ class PytestEntrypoint(unittest.TestCase):
         scratch.mkdir(exist_ok=True)
         root = Path(tempfile.mkdtemp(prefix='pytest-entrypoint-', dir=scratch))
         retained = os.environ.get('CAWS_EXPERIMENT_ARTIFACTS')
+        if retained:
+            Path(retained).mkdir(parents=True, exist_ok=True)
         evidence = Path(tempfile.mkdtemp(prefix='entrypoint-', dir=retained)) if retained else root / 'evidence'
         evidence.mkdir(exist_ok=True, parents=True)
         self.addCleanup(shutil.rmtree, root)

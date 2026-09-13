@@ -476,6 +476,15 @@ The candidate remains refused and unshipped. Before adopting it, inspect a repla
 with code/sidecar/output content validation, process-start identity binding, and
 serialized fallback writers; then examine timeout and concurrent-write receipts.
 
+`daemon-reloading-control.command.json` supplies the other direction over real
+loopback transport (exit 0). Its disposable daemon reloads the renderer and
+bypasses the render-result cache on each request; `reloading-control-input/control.json`
+records the exact change and hashes. The warm process 95438 and independent
+process 95488 both emit `source-b`; source freshness has `counterexample: false`.
+Sidecar inclusion and corruption repair also become observable. The remaining
+reaper counterexample keeps adoption refused. This intentionally slow control is
+not a proposed production daemon patch or a latency result.
+
 ### Test sensitivity and proof limits
 
 `repair-sensitivity/summary.json` records matched green controls (exit 0) and
@@ -494,3 +503,25 @@ making those claims, inspect native SessionStart/PreToolUse/Stop records, select
 paths/digests, actual refused/allowed tool results, and resulting files. The shell
 recognizer remains a bounded parser; these regressions do not establish complete
 Bash grammar coverage. Corpus commands were not executed or relabeled.
+
+### Final validation for the repair lane
+
+Every command below has a corresponding `<label>.command.json`, `.stdout` and
+`.stderr` under the repair scratch root. These receipts include cwd, argv, exit
+and duration; the installed pytest fixtures additionally retain runtime files.
+
+| Label / command | Exit | Observed result |
+|---|---:|---|
+| `full-pytest`: `<pytest-venv>/bin/python -m pytest -q packages/caws-cli/tests/hooks/pytest` | 0 | 225 passed; 17 pre-existing datetime deprecation warnings. `full-pytest/selection-c329a2_j/kimi-result-1.turn.json` retains `{"text": "résultat", "count": 0}` with `is_error: true`; the other four snapshots retain string, list, null and zero. `selection-iw55i6zy/mixed-handlers.command.json` retains dispatch exit 2 and the deny envelope, separately from the Stop render receipt. |
+| `full-jest`: `node <repo>/node_modules/jest/bin/jest.js --runInBand` from the CLI package | 0 | 2,761 passed across 220 suites (1,244.668 seconds). |
+| `full-bats`: `node_modules/.bin/bats packages/caws-cli/tests/hooks/bats packages/caws-cli/tests/hooks/bats-macos` | 1 | 275 passed, seven process-identity fixtures failed inside the sandbox. `sandbox-ps.json` records `PermissionError: Operation not permitted` when launching `ps`. |
+| `bats-process-controls`: Bats with the seven failed names selected across `block-dangerous.bats`, `session-id-agent-pid.bats`, `session-id-canonical.bats` | 0 | All seven pass unchanged with approved process access. These existing fixtures clean up their sentinel files; their retained evidence is the TAP output, not a preserved native session trace. The full suite was not rerun outside the sandbox. |
+| `build-logging`, `final-typecheck`, `final-lint`: package build, typecheck and lint | 0 | TypeScript compilation/checks and ESLint pass; Bash syntax checks pass for 64 scripts. Informational ShellCheck warnings remain in the retained lint output. |
+| `entrypoint-artifacts`: source-only entrypoint regression with a previously absent artifact directory | 0 | Real build and installed marker pass; the requested scratch root is created and receipts retained. This is the only test-source adjustment after the full pytest run. |
+| `final-gates`: `caws gates run --spec CAWS-HOOK-REVIEW-REPAIRS-001` | 0 | All five declared gates pass, zero violations. |
+| `final-doctor`: installed `caws doctor`; `source-doctor`: built CLI `doctor` | 1 | Existing foreign session's missing `wt-advisory-budget` cwd and seven warnings remain. Built CLI reports 1E/7W/15I; installed CLI reports 1E/7W/14I. No foreign ownership or machine configuration was changed. |
+
+The passing rerun closes the process-access explanation for those seven fixture
+failures. It does not establish actual OS PID reuse, a global runtime update, or
+any native harness delivery claim. The read-only lane review reports every source
+commit in scope; acceptance evidence is recorded separately through the CAWS CLI.
