@@ -371,8 +371,13 @@ export function resolveVendorDir(
  * list: if the guard checked a subset, an agent whose harness exports a var
  * outside that subset would resolve a session (and grant) while reading as a
  * human. Sharing the constant makes that drift impossible to introduce silently.
+ *
+ * Exported so tests that simulate a human terminal clear the same union the
+ * guard consults — a hand-maintained clear-list in a test goes stale the next
+ * time a surface is added (DSH/Qwen did exactly that) and the suite then fails
+ * only inside the new harness.
  */
-const AGENT_SESSION_VARS = [...new Set([
+export const AGENT_SESSION_VARS = [...new Set([
   'CLAUDE_SESSION_ID',
   'CLAUDE_CODE_SESSION_ID',
   'CODEX_THREAD_ID',
