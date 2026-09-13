@@ -1,0 +1,29 @@
+id: CAWS-TEST-SUITE-REPAIR-001
+title: 'Repair the failing/flaky test suite and retire environment-conditional skips'
+risk_tier: 2
+mode: fix
+lifecycle_state: draft
+created_at: '2026-09-13T01:44:58.237Z'
+updated_at: '2026-09-13T01:44:58.237Z'
+created_by_session: 'session-37dee8d4-0742-4d58-922e-c6f86eb38c89'
+blast_radius:
+  modules:
+    - 'TODO: list one or more modules this spec touches.'
+  data_migration: false
+operational_rollback_slo: 5m
+scope:
+  in:
+    - 'TODO: list the file(s) or directories this spec authorizes.'
+  out: []
+invariants:
+  - 'TODO: describe one invariant this spec guarantees.'
+acceptance:
+  - id: A1
+    given: 'TODO'
+    when: 'TODO'
+    then: 'TODO'
+non_functional: {}
+contracts:
+  - name: 'test-suite-green'
+    type: contract-test
+    path: 'packages/caws-cli/tests'
