@@ -126,6 +126,40 @@ class MachineHookSelection(unittest.TestCase):
         self.assertEqual(executed.returncode, 0, executed.stderr)
         self.assertEqual((self.repo / 'marker.log').read_text(), 'invoked\n')
 
+    def test_surface_compatibility_helpers_preserve_defaults_without_bootstrap_flags(self):
+        codex_parser = self.runtime / 'surfaces/codex/lib/parse-input.sh'
+        env = dict(self.env, CAWS_SHARED_LIB_DIR=str(self.runtime / 'lib'))
+        for label, flags, expected in [('default', {}, 'codex'),
+                                       ('explicit', {'CAWS_PLATFORM_FLAG':'dsh'}, 'dsh')]:
+            argv = ['/bin/bash', '-c',
+                    'source "$1"; HOOK_SESSION_ID="$2"; HOOK_CWD="$3"; _write_durable_session_envelope',
+                    '-', str(codex_parser), label, str(self.repo)]
+            result = subprocess.run(argv, cwd=self.repo, env=dict(env, **flags), capture_output=True)
+            artifact = self.repo / '.caws/sessions' / label / '.session-envelope.json'
+            (self.root / (label + '-platform.command.json')).write_text(json.dumps({
+                'argv':argv, 'exit_code':result.returncode, 'stderr':result.stderr.decode(),
+                'artifact':str(artifact)}, indent=2))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(artifact.read_text())['platform'], expected)
+
+    def test_kimi_compatibility_runner_promotes_errors_without_surface_flags(self):
+        kimi_runner = self.runtime / 'surfaces/kimi-code/lib/run-handlers.sh'
+        env = dict(self.env, CAWS_SHARED_LIB_DIR=str(self.runtime / 'lib'))
+        handlers = self.root / 'exit-handlers'
+        handlers.mkdir()
+        for code in (0,1,2):
+            handler = handlers / ('exit-' + str(code) + '.sh')
+            handler.write_text('#!/bin/bash\nexit ' + str(code) + '\n')
+            handler.chmod(0o755)
+        for code in (0,1,2):
+            argv = ['/bin/bash', '-c', 'source "$1"; run_handlers "$2"', '-',
+                    str(kimi_runner), 'exit-' + str(code) + '.sh']
+            result = subprocess.run(argv, cwd=self.repo,
+                env=dict(env, HOOKS_DIR=str(handlers), HOOK_INPUT_JSON='{}'), capture_output=True)
+            (self.root / ('kimi-exit-' + str(code) + '.command.json')).write_text(json.dumps({
+                'argv':argv, 'exit_code':result.returncode, 'stderr':result.stderr.decode()}, indent=2))
+            self.assertEqual(result.returncode, 0 if code == 0 else 2, result.stderr)
+
     def test_missing_anchor_is_a_visible_failure_before_execution(self):
         self.config['extensions']['pre_tool_use'][0]['before'] = 'absent.sh'
         self.configure()

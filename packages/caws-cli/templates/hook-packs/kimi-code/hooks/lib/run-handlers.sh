@@ -15,7 +15,9 @@
 #   everything else freely.
 # Surface compatibility entry: dispatch is implemented once in shared.
 # The shared runner preserves deny priority, Codex diagnostic aliases, and
-# Kimi exit-code promotion using the already resolved CAWS_AGENT_SURFACE.
+# Kimi exit-code promotion. A direct compatibility caller may have no bootstrap
+# flags; selecting this vendor entry supplies the fallback surface explicitly.
+export CAWS_AGENT_SURFACE="${CAWS_AGENT_SURFACE:-kimi-code}"
 _caws_surface_runner_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _caws_shared_runner="${CAWS_SHARED_LIB_DIR:-${_caws_surface_runner_dir}/../../../.caws/hooks/lib}/run-handlers.sh"
 if [[ ! -f "$_caws_shared_runner" ]]; then

@@ -515,6 +515,25 @@ def parse_audit_events(path: str, session_id: str) -> list[dict[str, Any]]:
     return events
 
 
+def hook_handler_status(row: dict[str, Any], stdout: str) -> Any:
+    """Interpret this handler's return; the adapter outcome belongs to the chain."""
+    try:
+        payload = json.loads(stdout)
+    except (TypeError, ValueError):
+        payload = None
+    decision = None
+    if isinstance(payload, dict):
+        decision = payload.get("decision")
+        hook_output = payload.get("hookSpecificOutput")
+        if decision is None and isinstance(hook_output, dict):
+            decision = hook_output.get("permissionDecision")
+    if row.get("exit_code") == 2 or decision in ("block", "deny"):
+        return "block"
+    if decision == "ask":
+        return "ask"
+    return row.get("status")
+
+
 def parse_hook_outcome_events(path: str, session_id: str) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     for row in load_json_records(path):
@@ -548,7 +567,7 @@ def parse_hook_outcome_events(path: str, session_id: str) -> list[dict[str, Any]
             "hook_event": row.get("hook_event"),
             "tool_use_id": row.get("tool_use_id"),
             "tool_name": row.get("tool_name"),
-            "status": ("block" if row.get("adapter_exit_code") == 2 else row.get("status")),
+            "status": hook_handler_status(row, stdout),
             "additional_context": additional_context,
             "context_authority": context_authority,
             "stdout": stdout,

@@ -195,6 +195,64 @@ runpy.run_path(renderer,run_name='__main__')
         self.assertNotIn('foreign-noise',json.dumps(turn))
         self.validate(turn)
 
+    def test_kimi_tool_results_preserve_structured_values_and_error_state(self):
+        for index, output in enumerate(['plain output', {'text':'résultat', 'count':0},
+                                        [{'type':'text', 'text':'first'}, {'value':False}], None, 0]):
+            with self.subTest(output=output):
+                rows = [
+                    {'type':'turn.prompt','time':1700000000000,
+                     'input':[{'type':'text','text':'Read the result.'}]},
+                    {'type':'context.append_loop_event','time':1700000000100,
+                     'event':{'type':'tool.call','name':'Read','toolCallId':'kimi-result','args':{'path':'foo'}}},
+                    {'type':'context.append_loop_event','time':1700000000200,
+                     'event':{'type':'tool.result','toolCallId':'kimi-result',
+                              'result':{'output':output,'isError':index == 1}}},
+                ]
+                self.prepare(rows, 'kimi-code')
+                turn = self.render('kimi-result-' + str(index))[0]
+                (self.root / ('kimi-result-' + str(index) + '.turn.json')).write_text(
+                    json.dumps(turn, ensure_ascii=False, indent=2))
+                call = next(item for item in turn['timeline'] if item['kind'] == 'tool_call')
+                expected = output if isinstance(output, str) else json.dumps(output, ensure_ascii=False)
+                self.assertEqual(call['output'], expected)
+                self.assertEqual(call['is_error'], index == 1)
+                self.validate(turn)
+
+    def test_mixed_handler_decisions_keep_per_handler_attribution(self):
+        self.prepare([codex('message', role='user', content=[{'type':'input_text','text':'Inspect decisions.'}])])
+        handlers = {
+            'success.sh':'#!/bin/bash\nexit 0\n',
+            'ask.sh':'#!/bin/bash\necho \'{"hookSpecificOutput":{"permissionDecision":"ask","permissionDecisionReason":"review required"}}\'\n',
+            'deny.sh':'#!/bin/bash\necho \'{"decision":"deny","reason":"fixture refusal"}\'\n',
+        }
+        self.config['extensions']['pre_tool_use'] = []
+        for name, source in handlers.items():
+            path = self.repo / '.caws/hooks' / name
+            path.write_text(source)
+            path.chmod(0o755)
+            self.config['handlers'][name] = '.caws/hooks/' + name
+            self.config['extensions']['pre_tool_use'].append({'handler':name, 'before':None})
+        self.configure()
+        argv = ['python3', str(self.home / 'bin/caws-hook'), 'codex', 'pre_tool_use', '--system']
+        payload = {'session_id':'codex', 'cwd':str(self.repo), 'tool_name':'Read'}
+        result = subprocess.run(argv, cwd=self.repo, env=self.env, capture_output=True,
+                                input=json.dumps(payload).encode(), timeout=30)
+        (self.root / 'mixed-handlers.command.json').write_text(json.dumps({
+            'argv':argv, 'input':payload, 'exit_code':result.returncode,
+            'stdout':result.stdout.decode(), 'stderr':result.stderr.decode()}, indent=2))
+        self.assertEqual(result.returncode, 2, result.stderr)
+        records = [json.loads(line) for line in (self.logs / 'hook-events.jsonl').read_text().splitlines()]
+        self.assertEqual([(row['handler'], row['exit_code']) for row in records],
+                         [('success.sh',0), ('ask.sh',0), ('deny.sh',0)])
+        self.assertEqual([row['adapter_exit_code'] for row in records], [2,2,2])
+        turn = self.render('mixed-handlers-render')[0]
+        contexts = {item['hook_name']:item for item in turn['hook_contexts']}
+        self.assertEqual({name:item['status'] for name,item in contexts.items()},
+                         {'success.sh':'completed', 'ask.sh':'ask', 'deny.sh':'block'})
+        self.assertEqual(turn['status'], 'blocked')
+        self.assertTrue(all(item['delivery'] == 'not_observed' for item in contexts.values()))
+        self.validate(turn)
+
     def test_missing_transcript_preserves_turns_and_corrupted_output_is_rebuilt(self):
         self.prepare([codex('message',role='user',content=[{'type':'input_text','text':'Retain this request.'}])])
         self.render('retained-before')
