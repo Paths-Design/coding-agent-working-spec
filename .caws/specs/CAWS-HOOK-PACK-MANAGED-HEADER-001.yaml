@@ -85,3 +85,7 @@ evidence:
     status: pass
     evidence_ref: "resolver-guard-divergence A5 behavioral test: shipped writer under shipped codex surface writes platform=codex to .session-envelope.json"
     recorded_at: "2026-09-13T03:48:12.143Z"
+  - criterion_id: A5
+    status: pass
+    evidence_ref: npx jest tests/shell/session/resolver-guard-divergence.test.js (assertions retargeted to session-cache.sh + agent-surface.sh; green)
+    recorded_at: "2026-09-13T03:48:13.186Z"
