@@ -66,3 +66,8 @@ contracts:
   - name: 'test-suite-green'
     type: contract-test
     path: 'packages/caws-cli/tests'
+evidence:
+  - criterion_id: A1
+    status: pass
+    evidence_ref: "npx jest tests/docs/cli-help-context.test.js (group-enumeration test green; settle named in command-metadata.ts:1804)"
+    recorded_at: "2026-09-13T02:03:10.601Z"
