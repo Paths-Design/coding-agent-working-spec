@@ -1,0 +1,57 @@
+id: CAWS-RELEASE-CANDIDATE-REPAIRS-001
+title: 'Repair candidate CI and release evidence gaps'
+risk_tier: 2
+mode: fix
+lifecycle_state: draft
+created_at: '2026-09-13T06:26:55.237Z'
+updated_at: '2026-09-13T06:26:55.237Z'
+created_by_session: '01a097e1-0a6f-7821-80d8-dedde2ac2cd6'
+blast_radius:
+  modules:
+    - 'Hook fixtures, release workflow, candidate metadata and qualification evidence'
+  data_migration: false
+operational_rollback_slo: 5m
+scope:
+  in:
+    - '.github/workflows/'
+    - 'scripts/'
+    - 'packages/caws-cli/tests/'
+    - 'packages/caws-cli/scripts/'
+    - 'packages/caws-cli/templates/hook-packs/'
+    - 'packages/caws-cli/src/init/hook-packs/'
+    - 'packages/caws-cli/package.json'
+    - 'packages/caws-cli/CHANGELOG.md'
+    - 'packages/caws-cli/mutation-policy.json'
+    - 'package-lock.json'
+    - 'docs/release-procedure.md'
+    - 'docs/audits/hook-port-qualification.md'
+    - '.tmp/caws-release-candidate/'
+  out: []
+invariants:
+  - 'Release evidence binds the tested candidate and preserves governance, ownership and custom runtime behavior; tagging and publication remain separate release actions.'
+acceptance:
+  - id: A1
+    given: 'a wrapped Base64 transport and Unicode hook output'
+    when: 'the fixture and byte checks execute'
+    then: 'valid output round-trips and corrupted output fails with retained raw artifacts'
+  - id: A2
+    given: 'completed releases or explicit versions'
+    when: 'consumer CI resolves its target'
+    then: 'it verifies the exact requested or released version and refuses unresolved identity'
+  - id: A3
+    given: 'scoped and unbound ownership states'
+    when: 'native hook and installed governance probes run'
+    then: 'legitimate writes pass and unauthorized writes refuse with explicit native evidence limits'
+  - id: A4
+    given: 'an unused candidate version'
+    when: 'metadata and packaged-upgrade qualification run'
+    then: 'version notes and package identity agree and preservation rollback and dependency reports are inspected'
+  - id: A5
+    given: 'committed candidate fixes'
+    when: 'remote qualification and full mutation run on that SHA'
+    then: 'retained reports establish all required checks or name unresolved failures without treating setup errors as proof'
+non_functional: {}
+contracts:
+  - name: 'candidate-release'
+    type: behavior
+    path: 'docs/audits/hook-port-qualification.md'
