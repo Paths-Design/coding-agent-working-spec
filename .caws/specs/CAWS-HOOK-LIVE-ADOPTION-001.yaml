@@ -2,9 +2,11 @@ id: CAWS-HOOK-LIVE-ADOPTION-001
 title: 'Activate qualified hook repairs in the machine runtime and push source'
 risk_tier: 2
 mode: chore
-lifecycle_state: active
+lifecycle_state: closed
+resolution: completed
+closure_notes: 'Installed standalone CLI snapshot 56c59c3da31d41fc-oCvYOI and runtime 94bff191a0b3a66797d55a9286fb26a71c3d1ecc890d3a91130c0b468ba165f3. Eleven source/package/runtime byte triples agree; live launcher lifecycle and native refusal artifacts retained. Build, lint, low-severity root/consumer audits, and five gates pass. Initial push verified remote/local 5077c9c71fcf03fd2f131ffac4cf09cb2241697a with clean checkout. Existing doctor findings and native/CI/non-release limits documented in docs/audits/hook-port-qualification.md.'
 created_at: '2026-09-13T05:09:46.014Z'
-updated_at: '2026-09-13T05:22:27.488Z'
+updated_at: '2026-09-13T05:44:24.331Z'
 created_by_session: '01a097e1-0a6f-7821-80d8-dedde2ac2cd6'
 blast_radius:
   modules:
