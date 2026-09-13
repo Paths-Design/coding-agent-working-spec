@@ -36,3 +36,12 @@ contracts:
   - name: 'live-hook-adoption'
     type: behavior
     path: 'docs/audits/hook-port-qualification.md'
+evidence:
+  - criterion_id: A1
+    status: pass
+    evidence_ref: /private/tmp/caws-hook-live-20260913/live-byte-parity.json; cli-install.command.json; runtime-install.command.json
+    recorded_at: "2026-09-13T05:40:41.938Z"
+    command: caws init adapters install --json
+    exit_code: 0
+    artifact_path: /private/tmp/caws-hook-live-20260913/live-byte-parity.json
+    commit_sha: "64fc9725"
