@@ -57,3 +57,12 @@ contracts:
   - name: 'hook-review-repairs'
     type: behavior
     path: 'docs/audits/hook-port-qualification.md'
+evidence:
+  - criterion_id: A1
+    status: pass
+    evidence_ref: Installed foreign refusals and ownership preservation; incident-matched red and green fixtures
+    recorded_at: "2026-09-13T05:02:01.034Z"
+    command: "/Users/darianrosebrook/Desktop/Projects/caws/packages/caws-cli/tests/hooks/pytest/.venv/bin/python -m pytest -q packages/caws-cli/tests/hooks/pytest/test_bash_mutation_boundary.py packages/caws-cli/tests/hooks/pytest/test_installed_governance_boundary.py::InstalledGovernanceBoundary"
+    exit_code: 0
+    artifact_path: /private/tmp/caws-hook-repairs-20260913/governance-observations.json
+    commit_sha: a63a6cfae784c676728751c5c546b64e5954700d
