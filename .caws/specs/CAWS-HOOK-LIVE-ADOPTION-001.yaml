@@ -45,3 +45,11 @@ evidence:
     exit_code: 0
     artifact_path: /private/tmp/caws-hook-live-20260913/live-byte-parity.json
     commit_sha: "64fc9725"
+  - criterion_id: A2
+    status: pass
+    evidence_ref: .tmp/caws-hook-live-adoption/scenario-hciwz1ed/summary.json; /private/tmp/caws-hook-live-20260913/native-refusal.json; docs/audits/hook-port-qualification.md live adoption limits
+    recorded_at: "2026-09-13T05:41:01.682Z"
+    command: python3 .tmp/caws-hook-live-adoption/live-scenarios.py
+    exit_code: 0
+    artifact_path: .tmp/caws-hook-live-adoption/scenario-hciwz1ed/summary.json
+    commit_sha: "64fc9725"
