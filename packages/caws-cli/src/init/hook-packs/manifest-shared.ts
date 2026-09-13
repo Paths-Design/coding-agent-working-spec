@@ -423,7 +423,8 @@ import { isAdapterCoveredSurface } from './types';
 // audit, and lib/heredoc.sh) move the enforcement plane while leaving every
 // consumer of the signal believing nothing changed. Bump it WITH the template
 // change; tests/init/pack-fingerprint.test.js fails closed otherwise.
-export const SHARED_PACK_VERSION = 68;
+// Hook port qualification: shared execution records and session-cache custody.
+export const SHARED_PACK_VERSION = 72;
 
 /**
  * The vendored TELEMETRY rows: the turn-log fold (session-log.sh +
@@ -560,8 +561,98 @@ export const SHARED_PACK: HookPackV1 = {
 
     // -- Shared libraries --
     {
+      destPath: '.caws/hooks/hook-utilities.sh',
+      sourcePath: 'hook-utilities.sh',
+      executable: true,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/hook-utilities.py',
+      sourcePath: 'lib/hook-utilities.py',
+      executable: false,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/transcript-store.py',
+      sourcePath: 'lib/transcript-store.py',
+      executable: false,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/harness_claude.py',
+      sourcePath: 'lib/harness_claude.py',
+      executable: false,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/harness_codex.py',
+      sourcePath: 'lib/harness_codex.py',
+      executable: false,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/harness_common.py',
+      sourcePath: 'lib/harness_common.py',
+      executable: false,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/harness_dsh.py',
+      sourcePath: 'lib/harness_dsh.py',
+      executable: false,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/harness_kimi.py',
+      sourcePath: 'lib/harness_kimi.py',
+      executable: false,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/harness_opencode.py',
+      sourcePath: 'lib/harness_opencode.py',
+      executable: false,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/harness_qwen.py',
+      sourcePath: 'lib/harness_qwen.py',
+      executable: false,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/harness_zcode.py',
+      sourcePath: 'lib/harness_zcode.py',
+      executable: false,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/session-log.schema.json',
+      sourcePath: 'lib/session-log.schema.json',
+      executable: false,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/bash-mutation-targets.sh',
+      sourcePath: 'lib/bash-mutation-targets.sh',
+      executable: false,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/ask-capability.sh',
+      sourcePath: 'lib/ask-capability.sh',
+      executable: false,
+      managed: true,
+    },
+    {
       destPath: '.caws/hooks/lib/agent-surface.sh',
       sourcePath: 'lib/agent-surface.sh',
+      executable: false,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/session-cache.sh',
+      sourcePath: 'lib/session-cache.sh',
       executable: false,
       managed: true,
     },

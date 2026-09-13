@@ -102,7 +102,7 @@ _rh_stdout_priority() {
   local decision
   decision=$(printf '%s' "$payload" | jq -r '.decision // .hookSpecificOutput.permissionDecision // ""' 2>/dev/null || true)
   case "$decision" in
-    block) printf '3\n' ;;
+    block|deny) printf '3\n' ;;
     ask) printf '2\n' ;;
     *) printf '1\n' ;;
   esac
@@ -341,6 +341,23 @@ _rh_dedup_flush() {
 # ---------------------------------------------------------------------------
 # run_handlers [--short-circuit-on-block] <handler-entry>...
 # ---------------------------------------------------------------------------
+_rh_record_execution() {
+  # The machine launcher owns this private per-dispatch file. Recording is
+  # provenance-only: failure is visible and never changes a guard decision.
+  [[ -n "${CAWS_HOOK_EXECUTION_FILE:-}" ]] || return 0
+  printf '%s' "$6" | jq -Rsc \
+    --arg session_id "$_rh_session_id" --arg handler "$1" --arg path "$2" \
+    --arg status "$3" --argjson exit_code "$4" --rawfile stderr "$5" \
+    --arg hook_event "${HOOK_EVENT_NAME:-}" --arg tool_name "${HOOK_TOOL_NAME:-}" \
+    --arg tool_use_id "${HOOK_TOOL_USE_ID:-}" \
+    '{timestamp:(now|strftime("%Y-%m-%dT%H:%M:%SZ")),session_id:$session_id,
+      handler:$handler,path:$path,status:$status,exit_code:$exit_code,
+      hook_event:$hook_event,tool_name:$tool_name,tool_use_id:$tool_use_id,
+      stdout:.,stderr:$stderr}' >> "$CAWS_HOOK_EXECUTION_FILE" || \
+    printf '[caws execution record] could not record %s\n' "$1" >&2
+  return 0
+}
+
 run_handlers() {
   local short_circuit=0
   # Dispatch-scoped staging for dedup keys, declared with the other locals so it
@@ -395,10 +412,15 @@ run_handlers() {
   # env var names for dry-run / timing so that existing consumer configs
   # that set CLAUDE_HOOK_DRY_RUN keep working during the migration period.
   local dry_run=0
-  _rh_is_truthy "${CAWS_HOOK_DRY_RUN:-${CLAUDE_HOOK_DRY_RUN:-}}" && dry_run=1
+  local surface_dry_run="" surface_timing=""
+  if [[ "${CAWS_AGENT_SURFACE:-}" == codex ]]; then
+    surface_dry_run="${CODEX_HOOK_DRY_RUN:-}"
+    surface_timing="${CODEX_HOOK_TIMING:-}"
+  fi
+  _rh_is_truthy "${CAWS_HOOK_DRY_RUN:-${CLAUDE_HOOK_DRY_RUN:-$surface_dry_run}}" && dry_run=1
 
   local timing=0
-  _rh_is_truthy "${CAWS_HOOK_TIMING:-${CLAUDE_HOOK_TIMING:-}}" && timing=1
+  _rh_is_truthy "${CAWS_HOOK_TIMING:-${CLAUDE_HOOK_TIMING:-$surface_timing}}" && timing=1
 
   local max_exit=0
   local base_stdout=""
@@ -455,6 +477,7 @@ run_handlers() {
       [[ -z "$system_override" ]] || handler_path="$system_override"
     fi
     if [[ ! -x "$handler_path" ]]; then
+      _rh_record_execution "$handler" "$handler_path" missing null /dev/null ""
       continue
     fi
 
@@ -468,6 +491,7 @@ run_handlers() {
        caws_is_handler_reprieved "$handler" "$_rh_session_id"; then
       printf '[reprieve] %s skipped for session %s (expires %s)\n' \
         "$handler" "$_rh_session_id" "${CAWS_REPRIEVE_EXPIRES_AT:-?}" >&2
+      _rh_record_execution "$handler" "$handler_path" reprieved null /dev/null ""
       continue
     fi
 
@@ -492,6 +516,7 @@ run_handlers() {
     stdout_buf=$(printf '%s' "$HOOK_INPUT_JSON" \
                   | "$handler_path" "$@" 2>"$stderr_file")
     local exit_code=$?
+    _rh_record_execution "$handler" "$handler_path" completed "$exit_code" "$stderr_file" "$stdout_buf"
     local offer_action="released"
     local offer_reason="handler output was not selected"
 
@@ -716,6 +741,11 @@ run_handlers() {
 
   fi
 
+  # Kimi has no enforced exit-1 tier. Preserve its adapter's promotion before
+  # settling advisory dedup, so a refused dispatch cannot consume a retry.
+  if [[ "${CAWS_AGENT_SURFACE:-}" == kimi-code ]] && (( max_exit != 0 )); then
+    max_exit=2
+  fi
   local composed_stdout="$base_stdout"
   if [[ -n "$advisory_context" ]]; then
     if [[ -n "$base_stdout" ]]; then

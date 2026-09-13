@@ -269,134 +269,10 @@ parse_hook_input() {
 }
 
 # CAWS-SESSION-ID-DURABLE-HOOK-ENVELOPE-001
-# Write/refresh `<repo_root>/.caws/sessions/<session_id>/.session-envelope.json`.
-# Called from parse_hook_input after exports are set. Idempotent.
-# Preserves created_at across refreshes; updates last_seen_at to now.
-# All failures are silently swallowed; hooks MUST NOT block on cache.
-_write_durable_session_envelope() {
-  # Refuse missing/unknown/empty session id. The resolver refuses the
-  # literal "unknown" so writing it would just produce a stale file
-  # that gets skipped on read.
-  local sid="${HOOK_SESSION_ID:-}"
-  if [[ -z "$sid" || "$sid" == "unknown" ]]; then
-    return 0
-  fi
-
-  # CANONICAL repo root via git. CAWS-SESSION-LOG-RELOCATE-001: per-session
-  # state lives under <canonical>/.caws/sessions/, not repo-root tmp/. We
-  # resolve git-common-dir's parent (the canonical checkout) so a linked
-  # worktree writes to the canonical .caws/sessions/, and so the envelope's
-  # repo_root FIELD matches the resolver's canonical repoRoot
-  # (path.dirname(cawsDir)). If HOOK_CWD is empty or git fails, skip.
-  local cwd="${HOOK_CWD:-$PWD}"
-  local repo_root common
-  common=$(cd "$cwd" 2>/dev/null && git rev-parse --git-common-dir 2>/dev/null) || return 0
-  [[ -z "$common" ]] && return 0
-  case "$common" in
-    /*) : ;;
-    *)  common="$cwd/$common" ;;
-  esac
-  repo_root=$(cd "$common/.." 2>/dev/null && pwd -P) || return 0
-  [[ -z "$repo_root" ]] && return 0
-  # Only write where a .caws/ exists (a real CAWS project).
-  [[ -d "$repo_root/.caws" ]] || return 0
-
-  local envelope_dir="$repo_root/.caws/sessions/$sid"
-  local envelope_path="$envelope_dir/.session-envelope.json"
-  mkdir -p "$envelope_dir" 2>/dev/null || return 0
-
-  # Preserve created_at from existing envelope (refresh semantics).
-  # Use python for JSON read; if parse fails, treat as new envelope.
-  local now created_at
-  now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-  created_at="$now"
-  if [[ -f "$envelope_path" ]]; then
-    local existing_created
-    existing_created=$(python3 -c '
-import json, sys
-try:
-    with open(sys.argv[1]) as f:
-        d = json.load(f)
-    v = d.get("created_at")
-    if isinstance(v, str) and v:
-        print(v)
-except Exception:
-    pass
-' "$envelope_path" 2>/dev/null)
-    if [[ -n "$existing_created" ]]; then
-      created_at="$existing_created"
-    fi
-  fi
-
-  # Atomic write: temp file + rename. tmpfile is in the same dir to
-  # guarantee same-filesystem rename atomicity.
-  #
-  # CAWS-RESOLVER-PLATFORM-FROM-ENVELOPE-001: the payload now carries a
-  # `platform` field sourced from CAWS_PLATFORM_FLAG (exported per surface by
-  # agent-surface.sh: claude-code/codex/opencode/zcode/cursor/windsurf). The
-  # resolver reads this instead of hardcoding 'claude-code', so a non-Claude
-  # session's lease/status display reflects its true harness. Defaults to
-  # 'claude-code' when CAWS_PLATFORM_FLAG is unset (back-compat for wirings
-  # that have not yet sourced agent-surface.sh, and for legacy envelopes
-  # which the resolver also falls back on).
-  local platform="${CAWS_PLATFORM_FLAG:-claude-code}"
-  local tmpfile="$envelope_dir/.session-envelope.tmp.$$"
-  python3 -c '
-import json, sys
-payload = {
-    "session_id": sys.argv[1],
-    "repo_root": sys.argv[2],
-    "created_at": sys.argv[3],
-    "last_seen_at": sys.argv[4],
-    "hook_event": sys.argv[5],
-    "platform": sys.argv[6],
-}
-with open(sys.argv[7], "w") as f:
-    json.dump(payload, f)
-    f.write("\n")
-' "$sid" "$repo_root" "$created_at" "$now" "${HOOK_EVENT_NAME:-unknown}" "$platform" "$tmpfile" 2>/dev/null || {
-    rm -f "$tmpfile" 2>/dev/null
-    return 0
-  }
-  mv -f "$tmpfile" "$envelope_path" 2>/dev/null || {
-    rm -f "$tmpfile" 2>/dev/null
-    return 0
-  }
-
-  # CAWS-WORKTREE-OWNERSHIP-HARNESS-ID-001: also write/refresh the per-repo
-  # caller-session pointer at `<repo_root>/.caws/sessions/.caller-session.json`
-  # (CAWS-SESSION-LOG-RELOCATE-001 moved it out of repo-root tmp/). In
-  # agent-Bash, HOOK_SESSION_ID is not in the env, so the resolver cannot
-  # tell which of several fresh sibling envelopes is the caller's. This
-  # pointer names the session that most recently fired a hook in this repo
-  # — the actively-working caller — so the resolver can disambiguate the
-  # >=2-fresh-envelope case to the caller's own envelope. Evidence only:
-  # the resolver treats absent/stale/non-matching pointers as "refuse",
-  # never as a guess. Reuses sid / repo_root / now from above.
-  local pointer_dir="$repo_root/.caws/sessions"
-  local pointer_path="$pointer_dir/.caller-session.json"
-  local pointer_tmp="$pointer_dir/.caller-session.tmp.$$"
-  mkdir -p "$pointer_dir" 2>/dev/null || return 0
-  python3 -c '
-import json, sys
-payload = {
-    "session_id": sys.argv[1],
-    "repo_root": sys.argv[2],
-    "last_seen_at": sys.argv[3],
-}
-with open(sys.argv[4], "w") as f:
-    json.dump(payload, f)
-    f.write("\n")
-' "$sid" "$repo_root" "$now" "$pointer_tmp" 2>/dev/null || {
-    rm -f "$pointer_tmp" 2>/dev/null
-    return 0
-  }
-  mv -f "$pointer_tmp" "$pointer_path" 2>/dev/null || {
-    rm -f "$pointer_tmp" 2>/dev/null
-    return 0
-  }
-  return 0
-}
+# One writer serves shared and surface-specific parsers.
+_caws_cache_lib="${CAWS_SHARED_LIB_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}/session-cache.sh"
+source "$_caws_cache_lib" || return 2
+unset _caws_cache_lib
 
 # CAWS-AGENT-PID-SESSION-CORRELATION-001
 # Write/refresh `<repo_root>/.caws/sessions/agent-pid-<agentPid>.json`.
@@ -464,6 +340,10 @@ _write_agent_pid_record() {
 
   local sessions_dir="$repo_root/.caws/sessions"
   local record_path="$sessions_dir/agent-pid-${agent_pid}.json"
+  if [[ -L "$repo_root/.caws" || -L "$sessions_dir" || -L "$record_path" ]]; then
+    printf '[caws session cache] unsafe PID record path; capture skipped\n' >&2
+    return 0
+  fi
   mkdir -p "$sessions_dir" 2>/dev/null || return 0
 
   # Preserve created_at across refreshes; update last_seen_at.
