@@ -8,12 +8,13 @@ updated_at: '2026-09-13T01:45:28.294Z'
 created_by_session: 'session-37dee8d4-0742-4d58-922e-c6f86eb38c89'
 blast_radius:
   modules:
-    - 'TODO: list one or more modules this spec touches.'
+    - 'packages/caws-cli/test corpus (jest + bats)'
+    - 'packages/caws-cli shell command metadata (message group enumeration)'
+    - 'packages/caws-cli reprieve command (AGENT_SESSION_VARS export)'
   data_migration: false
-operational_rollback_slo: 5m
+  operational_rollback_slo: 5m
 scope:
   in:
-    - 'TODO: list the file(s) or directories this spec authorizes.'
     - packages/caws-cli/src/shell/command-metadata.ts
     - packages/caws-cli/src/shell/commands/reprieve.ts
     - packages/caws-cli/tests/docs/cli-help-context.test.js
@@ -24,13 +25,42 @@ scope:
     - packages/caws-cli/tests/hooks/bats/session-id-agent-pid.bats
   out: []
 invariants:
-  - 'TODO: describe one invariant this spec guarantees.'
+  - 'Production behavior is not bent to satisfy a test assertion: the only source changes are (a) naming an existing visible subcommand in the user-facing group enumeration and (b) exporting an existing constant so tests consume the authoritative union.'
+  - 'The reprieve no-self-grant guard and the agent-register pack-staleness advisory stay fully active in production paths; tests isolate their own environment instead of weakening or silencing guards in shipped code.'
+  - 'Every repaired test keeps a falsifiable assertion (no vacuous guards, no skip-as-pass); where a wait is needed it gates on the state being asserted, not a precursor signal.'
+  - 'Generated docs stay consistent with command metadata (npm run docs:check exits 0).'
 acceptance:
   - id: A1
-    given: 'TODO'
-    when: 'TODO'
-    then: 'TODO'
-non_functional: {}
+    given: 'the message command group exposes the settle subcommand (added by 8acb9a97)'
+    when: 'the CLI help-context contract runs the enumeration check'
+    then: 'the message group description names settle, and the "enumerating group descriptions" test passes'
+  - id: A2
+    given: 'message prune help states the dead-recipient-proof retention guarantee (reworded by cb2a364a)'
+    when: 'the cleanup-leaf help-context expectations evaluate the pinned terms'
+    then: 'the pinned preservation term matches the current wording and the test passes without editing the shipped description'
+  - id: A3
+    given: 'mutation-policy.json accounts for 145 source files and 19 mutation targets (validator exit 0)'
+    when: 'the mutation topology contract test runs'
+    then: 'the pinned counts equal the validator output and the test passes'
+  - id: A4
+    given: 'an agent harness exports a session var in AGENT_SESSION_VARS (for example DSH_SESSION_ID)'
+    when: 'the reprieve CLI-parse-path test simulates a human terminal'
+    then: 'the test clears the full authoritative union and passes inside an agent-harness environment'
+  - id: A5
+    given: 'a machine whose installed runtime snapshot drifts from the repo hook templates'
+    when: 'the presence-injection A5 bound-checkout hook test runs'
+    then: 'no pack-staleness advisory leaks into the asserted-empty hook output and the suite passes'
+  - id: A6
+    given: 'block-dangerous.sh writes the dryrun log event before stamping trap_dryrun_pid on the sentinel'
+    when: 'the DRYRUN A1 bats test waits for escalation to complete under full-suite load'
+    then: 'the wait gates on the sentinel stamp and the full bats suite passes on repeated runs'
+  - id: A7
+    given: 'a runner with no ambient zsh ancestor process (the CI condition)'
+    when: 'the session-id-agent-pid bats tests execute'
+    then: 'each anchor-dependent test provisions its own sacrificial anchor process and runs to an assertion (zero skips in the bats output)'
+non_functional:
+  reliability:
+    - 'Test-suite verdicts depend on the code under test, not ambient environment: harness env vars, machine-runtime drift, and ambient process ancestry must not flip a verdict.'
 contracts:
   - name: 'test-suite-green'
     type: contract-test
