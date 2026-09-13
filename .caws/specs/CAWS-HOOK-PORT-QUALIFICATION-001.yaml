@@ -2,10 +2,11 @@ id: CAWS-HOOK-PORT-QUALIFICATION-001
 title: 'Port and falsify harvested hook governance, tenure, and logging mechanisms'
 risk_tier: 2
 mode: feature
-lifecycle_state: active
-worktree: wt-hook-qualification
+lifecycle_state: closed
+resolution: completed
+closure_notes: 'Completed scoped source and isolated installed-runtime qualification. Evidence: docs/audits/hook-port-qualification.md and /private/tmp/caws-hook-qualification-20260912/. Four source commits; five ACs recorded. Unsafe daemon rejected on four runtime counterexamples. Global installation, native harness execution/delivery, live database discovery, and classifier accuracy remain explicitly unverified. Doctor retains pre-existing foreign cwd and runtime drift findings.'
 created_at: '2026-09-12T23:55:13.776Z'
-updated_at: '2026-09-13T00:13:42.881Z'
+updated_at: '2026-09-13T02:10:33.479Z'
 created_by_session: '01a097e1-0a6f-7821-80d8-dedde2ac2cd6'
 blast_radius:
   modules:
