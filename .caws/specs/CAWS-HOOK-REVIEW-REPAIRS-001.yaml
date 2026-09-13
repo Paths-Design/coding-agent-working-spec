@@ -2,10 +2,11 @@ id: CAWS-HOOK-REVIEW-REPAIRS-001
 title: 'Repair reviewed hook recognition, transcript fidelity, and experiment qualification defects'
 risk_tier: 2
 mode: fix
-lifecycle_state: active
-worktree: wt-hook-review-repairs
+lifecycle_state: closed
+resolution: completed
+closure_notes: 'Repaired all seven reviewed must-fix items (including verification of the managed-header repair) and the source-freshness qualification defect. Five source commits; all five ACs have runtime artifact evidence. Full pytest 225 and Jest 2761 pass; Bats 275 pass in sandbox and all seven process-restricted cases pass unchanged with process access. Build/typecheck/lint and five gates pass. Existing doctor findings remain; native harness adoption, recipient delivery, classifier accuracy, and production latency remain unverified. Daemon remains refused and unshipped. Evidence: /private/tmp/caws-hook-repairs-20260913 and docs/audits/hook-port-qualification.md.'
 created_at: '2026-09-13T04:00:53.436Z'
-updated_at: '2026-09-13T04:01:22.321Z'
+updated_at: '2026-09-13T05:03:33.848Z'
 created_by_session: '01a097e1-0a6f-7821-80d8-dedde2ac2cd6'
 blast_radius:
   modules:
