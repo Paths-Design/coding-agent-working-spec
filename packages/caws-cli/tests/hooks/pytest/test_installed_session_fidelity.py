@@ -1,6 +1,8 @@
 """Final-consumer artifacts from installed session-log dispatch, not parser counts."""
 import hashlib
 import json
+import os
+import time
 from pathlib import Path
 import subprocess
 import sqlite3
@@ -65,6 +67,75 @@ console.log(JSON.stringify({valid,errors:validate.errors},null,2)); process.exit
                                  str(path)], cwd=PACKAGE, capture_output=True)
         (self.root / 'schema-validation.json').write_bytes(result.stdout)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_concurrent_renderers_lock_before_reading_and_leave_one_current_generation(self):
+        self.prepare([])
+        adapter=self.root/'controlled_adapter.py'
+        adapter.write_text("""from pathlib import Path
+import time
+
+def parse_transcript_events(path):
+    source=Path(path)
+    source.with_suffix('.entered').touch()
+    if source.stem=='first':
+        deadline=time.monotonic()+10
+        while not source.with_suffix('.release').exists():
+            if time.monotonic()>deadline: raise RuntimeError('test release timeout')
+            time.sleep(.01)
+    return [{'ev':'user_text','text':source.read_text(),'ts':'2026-09-12T12:00:00Z'}]
+""")
+        wrapper=self.root/'render_worker.py'
+        wrapper.write_text("""import runpy,sys
+from pathlib import Path
+renderer=sys.argv.pop(1)
+Path(sys.argv[-1]).with_suffix('.attempt').touch()
+sys.path.insert(0,str(Path(renderer).parent))
+runpy.run_path(renderer,run_name='__main__')
+""")
+        env=dict(self.env,CAWS_MACHINE_RUNTIME='1',CAWS_SESSION_TRANSCRIPT_ADAPTER=str(adapter))
+        processes=[]
+        receipts=[]
+        def wait_for(path):
+            deadline=time.monotonic()+8
+            while not path.exists():
+                if time.monotonic()>deadline: self.fail('missing experiment signal: '+str(path))
+                time.sleep(.01)
+        def launch(name):
+            source=self.root/(name+'.jsonl')
+            source.write_text(name+' snapshot')
+            argv=['python3',str(wrapper),str(self.runtime/'session_log_renderer.py'),
+                  str(self.logs),str(self.repo),'codex','2026-09-12T12:00:00Z',
+                  'fixture','main','a'*40,'0','a'*40,str(source)]
+            process=subprocess.Popen(argv,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            processes.append((name,process,argv))
+            return source
+        try:
+            first=launch('first')
+            wait_for(first.with_suffix('.entered'))
+            second=launch('second')
+            wait_for(second.with_suffix('.attempt'))
+            time.sleep(.3)
+            blocked_before_read=not second.with_suffix('.entered').exists()
+            (self.root/'lock-observation.json').write_text(json.dumps({
+                'first_inside_adapter':True,'second_attempted_render':True,
+                'second_blocked_before_read':blocked_before_read,'observation_seconds':.3}))
+            self.assertTrue(blocked_before_read, 'second renderer read inputs while first held the lock')
+        finally:
+            (self.root/'first.release').touch()
+            for name,process,argv in processes:
+                out,err=process.communicate(timeout=15)
+                (self.root/(name+'.stdout')).write_bytes(out)
+                (self.root/(name+'.stderr')).write_bytes(err)
+                receipts.append({'argv':argv,'exit_code':process.returncode})
+            (self.root/'concurrent-render.command.json').write_text(json.dumps(receipts,indent=2))
+        self.assertEqual([r['exit_code'] for r in receipts],[0,0])
+        turns=list(self.logs.glob('turn-*.json'))
+        self.assertEqual(len(turns),1)
+        self.assertEqual(json.loads(turns[0].read_text())['user'],'second snapshot')
+        state=json.loads((self.logs/'.render-state.json').read_text())
+        self.assertTrue(state['outputs_current'])
+        self.assertEqual(state['inputs_after']['transcript_path']['sha256'],hashlib.sha256(second.read_bytes()).hexdigest())
+        self.assertEqual(state['outputs'][turns[0].name],hashlib.sha256(turns[0].read_bytes()).hexdigest())
 
     def test_codex_native_seam_preserves_raw_evidence_and_filters_injected_messages(self):
         program = ('const prose = \'tools.exec_command({cmd:"fabricated"})\';\n'

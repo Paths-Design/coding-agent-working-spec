@@ -19,6 +19,9 @@ REPO = Path(__file__).resolve().parents[2]
 TEMPLATES = REPO / 'packages/caws-cli/templates/hook-packs'
 TEST = REPO / 'packages/caws-cli/tests/hooks/pytest/test_machine_hook_selection.py'
 CASES = [
+    ('renderer-lock', 'shared/session_log_renderer.py', 'fcntl.flock(lock, fcntl.LOCK_EX)',
+     'pass  # sensitivity mutant: no writer serialization',
+     'fidelity:test_concurrent_renderers_lock_before_reading_and_leave_one_current_generation'),
     ('source-digest', 'runtime/caws-hook.py', "source_sha256=source['sha256']",
      "source_sha256='0' * 64", 'test_description_is_read_only_and_matches_executed_override'),
     ('denial-priority', 'shared/lib/run-handlers.sh', "block|deny) printf '3\\n' ;;",
@@ -32,7 +35,11 @@ def execute(directory, templates, test):
     directory.mkdir(parents=True)
     env = dict(os.environ, CAWS_TEST_TEMPLATES_ROOT=str(templates),
                CAWS_EXPERIMENT_ARTIFACTS=str(directory / 'artifacts'), PYTHONDONTWRITEBYTECODE='1')
-    command = [sys.executable, str(TEST), 'MachineHookSelection.' + test, '-v']
+    if test.startswith('fidelity:'):
+        command=[sys.executable,str(TEST.with_name('test_installed_session_fidelity.py')),
+                 'InstalledSessionFidelity.'+test.split(':',1)[1],'-v']
+    else:
+        command = [sys.executable, str(TEST), 'MachineHookSelection.' + test, '-v']
     try:
         result = subprocess.run(command, env=env, cwd=REPO, capture_output=True, timeout=180)
     except subprocess.TimeoutExpired as error:
@@ -50,11 +57,13 @@ def execute(directory, templates, test):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--case', choices=[case[0] for case in CASES], action='append')
     args = parser.parse_args()
     base = args.output.resolve()
     base.mkdir(parents=True, exist_ok=False)
     results = []
     for name, relative, original, mutation, test in CASES:
+        if args.case and name not in args.case: continue
         control = execute(base / name / 'control', TEMPLATES, test)
         with tempfile.TemporaryDirectory(prefix='caws-hook-mutant-') as temporary:
             copied = Path(temporary) / 'templates'
@@ -70,6 +79,7 @@ def main():
         # Match the decision-bearing assertion; arbitrary setup assertions are inconclusive.
         stderr = (base / name / 'mutant/stderr').read_text()
         expected_assertion = {
+            'renderer-lock': 'second renderer read inputs while first held the lock',
             'source-digest': "self.assertEqual(record['source_sha256'], selected['handlers'][0]['sha256'])",
             'denial-priority': 'self.assertEqual(denied.returncode, 2, denied.stderr)',
             'cache-symlink': 'self.assertEqual(list(outside.iterdir()), [])',
@@ -82,7 +92,7 @@ def main():
                         'control': control, 'mutant': outcome, 'killed': killed})
         print(json.dumps(results[-1]), flush=True)
     summary = {'schema': 'caws.hook_sensitivity.v1', 'cases': results,
-               'limits': ['Three selected defects; no exhaustive mutation-score claim.',
+               'limits': ['Selected defects only; no exhaustive mutation-score claim.',
                           'Assertion sensitivity does not establish correctness of its oracle.']}
     (base / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
     return 0 if all(row['killed'] for row in results) else 1

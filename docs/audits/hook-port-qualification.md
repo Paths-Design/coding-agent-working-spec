@@ -1,9 +1,10 @@
 # Hook port qualification
 
 Spec: `CAWS-HOOK-PORT-QUALIFICATION-001`. Started 2026-09-12.
-This report grows with the approved ports; unfinished sections are not closure
-claims. The harvest decisions were approved by the user in the conversation and
-in `sterling-hook-harvest.md`.
+The harvest decisions were approved by the user in the conversation and in
+`sterling-hook-harvest.md`. This is local source and isolated installed-runtime
+qualification. Global installation and fresh native harness adoption are separate
+follow-on work, not established by this report.
 
 ## Contract
 
@@ -75,12 +76,13 @@ consumer must not label a budget-omitted or deduplicated advisory as delivered.
 Stop's own execution record is appended after its renderer returns; it cannot
 appear in that same render. Subsequent reconstruction must include it.
 
-## Remaining approved ports
+## Port decisions
 
-Governance operand recognition and permission-mode repair, richer transcript
-fidelity, cache qualification, and hardened optional utilities/corpus experiments
-remain in progress. Their acceptance evidence will be recorded separately from
-the runtime-selection chunk above.
+Selected-code diagnostics, shared command recognition, tenure/permission repairs,
+transcript fidelity, and optional consumer utilities were ported and exercised.
+The daemon was qualified and rejected on concrete counterexamples; its code is
+not shipped. The in-process parser cache remains bounded by content validation.
+Corpus replay does not establish classifier accuracy or historical enforcement.
 
 ## Governance boundary port
 
@@ -198,7 +200,7 @@ Scratch root remains `/private/tmp/caws-hook-qualification-20260912/`.
   `is_error: true`, `output_truncated: false`, and parent `parent-session`
   labeled metadata with no authority. `schema-validation.json` is
   `{valid:true,errors:null}` with undeclared contract fields forbidden.
-- `fidelity-final/selection-f5tdj6h9/.../codex/turn-001.json` contains the new
+- `fidelity-final/selection-f5tdj6h9/repo/.caws/sessions/codex/turn-001.json` contains the new
   `guard-fixture` sidecar, `status: blocked`, `observation_boundary: handler_return`,
   and `delivery: not_observed`. The foreign-session sidecar is absent.
 - `fidelity-surfaces-after/selection-*/surface-*.command.json` retains the six
@@ -273,3 +275,139 @@ file write was observed as `execution_attempt_refused`. Byte offsets/hashes in
 The first replay runner used the wrong return shape and produced 698 harness
 AttributeErrors; those results are invalid for classifier assessment. The corrected
 run above exited 0 and all 698 rows have `status: classified`.
+
+
+## Optional consumer utilities
+
+`hook-utilities.sh` is shipped as an optional extension and is absent from default
+chains. With no `CAWS_OPTIONAL_HOOK_POLICY`, it emits nothing. An explicit consumer
+JSON file may contain:
+
+```json
+{
+  "version": 1,
+  "rg_replace": true,
+  "ignored_staging": true,
+  "focused_tests": {"executables": ["pytest"], "entry_point": "scripts/test"},
+  "documents": {"roots": ["docs/"], "required_frontmatter": ["title", "status"]}
+}
+```
+
+Set `CAWS_OPTIONAL_HOOK_POLICY` to that file's absolute path in the consumer
+harness environment. Add `{"handler":"hook-utilities.sh","before":null}` to
+its reviewed `extensions.pre_tool_use` policy using the existing
+[`init adapters migrate --from` workflow](../guides/hook-packs.md); preserve the
+consumer's other reviewed entries. No machine/project policy was globally enabled
+in this task. A migrated consumer's configuration update must retain its reviewed
+native registration and be checked through `--describe` and a real invocation.
+
+Replacement search is advisory because `-r n` can be intentional. Command
+positions, wrappers, option values, literal prose and `--` are distinguished.
+Focused-test advice grants no resource admission. Document checks are configurable
+frontmatter-key presence notices on Write, not YAML semantic validation, Edit
+coverage or repository-wide documentation enforcement.
+
+Forced staging uses fixed read-only Git ignored-path queries and supports literal
+cwd, `-C`, whole-tree selection, NUL pathspec files, literal pathspec mode and
+tracked-only updates. Only confirmed ignored-file selection blocks. Dynamic or
+complex shell coordinates, unsupported options, quoted pathspec decoding and
+unavailable pathspecs produce visible unresolved advice. These utilities are not
+an exhaustive shell/Git enforcement boundary. File/pathspec races and exotic Git
+environment semantics remain outside the verified envelope.
+
+### Installed artifacts and counterexamples
+
+`python3 packages/caws-cli/tests/hooks/pytest/test_installed_hook_utilities.py
+InstalledHookUtilities -v` exited 0 (three scenarios, 78.919 s) with
+`CAWS_EXPERIMENT_ARTIFACTS=<scratch>/utilities-isolated`. This includes repeated
+subcases, not a per-hook latency measurement. Retained receipts contain exact
+native payload, argv, runtime digest and exit status:
+
+- `utilities-isolated/selection-i1sse5k9/ignored-0.command.json`: captured
+  `git add -f private.generated` returns 2; `ignored-0.stdout` names the file.
+- The same directory's `stage-preserved-1.command.json` returns 0 for source
+  staging, and `stage-unresolved-0.stdout` explicitly declines a subshell cwd
+  guess. Ordinary add, dry-run, tracked-only update and literal wildcard
+  preservation cases returned 0.
+- `utilities-isolated/selection-yrc7m1tp/replace-0.stdout` says
+  `Ripgrep replacement is active`; quoted prose and option-value controls are quiet.
+- `utilities-isolated/selection-x46zrfvr/document-large.stdout` contains
+  `Consumer document metadata missing: title, status.` for a 125,000-character
+  input transported through the payload file.
+
+The first installed run exposed a real no-op: the utility read unavailable
+`HOOK_INPUT_JSON` instead of `HOOK_TOOL_INPUT_JSON` for small inputs. All three
+scenarios failed until the transport was repaired. Subsequent failures came from
+fixture assumptions: repeated same-session notices are deliberately deduplicated,
+and Claude block JSON stays on stdout. Independent cases now use separate session
+identities and inspect the correct surface output. This does not disable or evade
+production deduplication.
+
+## Concurrent rendering sensitivity
+
+The installed renderer's controlled two-process scenario exited 0. In
+`fidelity-concurrent/selection-lv8dm0ps/lock-observation.json`, the first process
+is inside its adapter, the second has attempted rendering, and
+`second_blocked_before_read` is true. Both command exits are 0; final
+`repo/.caws/sessions/codex/turn-001.json` contains `second snapshot` and its hash
+matches `.render-state.json` with `outputs_current: true`.
+
+`python3 scripts/hook-experiments/sensitivity.py --case renderer-lock --output
+<scratch>/sensitivity-renderer-lock` exited 0. The control exits 0; deleting
+`fcntl.flock` only in a disposable template copy causes exit 1 at the exact
+assertion `second renderer read inputs while first held the lock`. Both installed
+runtimes, commands, source hashes and outputs are retained in
+`sensitivity-renderer-lock/summary.json` and its referenced directories. This is
+one additional defect sensitivity check, not exhaustive race coverage. The test
+uses a controlled adapter for scheduling; it does not prove native scheduling,
+crash recovery, host-path race safety or a multi-file reader transaction.
+
+## Proof boundaries before broader adoption
+
+A passing suite could still hide unsupported executable wrappers, interpreter
+payloads, unmodeled shell/Git options, stale native registrations, missing source
+rows, a live database schema mismatch, or lost delivery after handler return.
+Syntax-indexed inner actions do not establish execution; parentage and leases do
+not establish ownership. A source digest taken before dispatch does not bind an
+executable against hostile replacement while running.
+
+Before claiming deployment or native protection, examine a fresh harness sequence:
+selected paths/digests, SessionStart envelope, a harmless foreign-owned write
+refusal with unchanged sentinel, delivered guard output, and Stop turn artifacts
+with matching sidecar/input/output hashes. Verify the consumer's actual YAML/oracle
+dependencies and native permission modes. For database discovery, inspect a live
+schema and source-row custody receipt. For classifier accuracy, add independently
+adjudicated labels and reconstructed authority/context states. Daemon adoption
+requires repairing and replaying all four counterexamples plus process-identity,
+timeout, concurrent-writer and native-latency experiments.
+
+Not verified: global machine installation, fresh real native harness execution,
+recipient-visible delivery, actual tool nonexecution after a native refusal,
+live OpenCode/ZCode databases, compressed/native child transcript discovery,
+arbitrary shell semantics, hostile filesystem races, or classifier error rates.
+
+
+The strengthened staging rerun uses an actual prepopulated Git index and retains
+`utilities-index-custody/selection-*/preservation.json` with before/after index and
+ignored-sentinel SHA256 values. The targeted installed scenario exited 0 (36.820 s);
+all captured command strings remained data. Only explicit fixture setup populated
+the scratch Git index. The before/after index and sentinel hashes match.
+
+## Final local validation
+
+Shared pack 72, Codex 24 and Kimi 8 are the qualified source distribution. The
+shared fingerprint is
+`4c0286f98d2c5177d772f3998a34c9d5f774ddb32b910d75b2f769a861178d7a`.
+The final fingerprint command exited 0 (14 checks), and the shared command lexer
+suite exited 0 (10 checks, 2.468 s). The package build passed after the optional
+manifest registration. Generated installed runtimes, corpus replay, mutants and
+logs remain under the scratch root, outside the source ledger.
+
+`final-checks/` retains command/exit/stdout/stderr receipts for claim, doctor,
+gates and whitespace validation. All five declared gates pass; this does not
+establish native behavior or comprehensive semantic correctness. Doctor exits 1
+with 1 error, 7 warnings and 14 informational findings: the error is another
+session's removed `wt-advisory-budget` cwd, and the warnings include existing
+legacy pack drift and missing foreign-owner leases. Those states were not repaired
+or taken over. The selected global runtime remains the previously installed
+version; source qualification does not silently replace it.

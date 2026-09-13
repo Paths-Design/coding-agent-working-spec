@@ -841,3 +841,17 @@ caws_bash_command_lines() {
   [[ $selected -eq 1 ]] && printf '%s\n' "$line"
   return 0
 }
+
+# Lossless token stream for optional policy readers. NUL cannot occur in a
+# shell argument. Every record is exactly kind, value, dynamic flag.
+caws_bash_token_records() {
+  local cmd="$1" i=0
+  if declare -F caws_blank_heredoc_bodies >/dev/null 2>&1; then
+    cmd="$(caws_blank_heredoc_bodies "$cmd")"
+  fi
+  _caws_lex "$cmd"
+  while [[ $i -lt ${#CAWS_TOK_VALUE[@]} ]]; do
+    printf '%s\0%s\0%s\0' "${CAWS_TOK_KIND[$i]}" "${CAWS_TOK_VALUE[$i]}" "${CAWS_TOK_DYNAMIC[$i]}"
+    i=$((i+1))
+  done
+}
