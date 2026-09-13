@@ -81,3 +81,7 @@ evidence:
     status: pass
     evidence_ref: "npx jest tests/init/init-hook-pack-render.test.js A4 (second shared install: every destination unchanged, bytes identical)"
     recorded_at: "2026-09-13T03:48:11.039Z"
+  - criterion_id: A4
+    status: pass
+    evidence_ref: "resolver-guard-divergence A5 behavioral test: shipped writer under shipped codex surface writes platform=codex to .session-envelope.json"
+    recorded_at: "2026-09-13T03:48:12.143Z"
