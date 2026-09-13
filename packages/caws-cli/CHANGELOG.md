@@ -1,4 +1,22 @@
-## [Unreleased]
+## [12.2.0-rc.2] (2026-09-13)
+
+Second release candidate for the shared machine runtime; publishes to `next`.
+
+### Hooks and release qualification
+
+- Preserve redirected command operands and absolute wrappers in write guards;
+  normalize logical and physical repository paths consistently.
+- Retain per-handler outcomes separately from adapter exits, handle Kimi's
+  structured results, and preserve Codex defaults and Kimi exit promotion.
+- Make repeated hook installation recognize managed support files, and build
+  the CLI before source-only pytest qualification.
+- Repair Linux Unicode-fixture transport by reading exact output files;
+  retain raw hook bytes in CI and run pytest even when Bats fails.
+- Bind post-release consumer checks to the released version and commit,
+  resolve manual channels to exact versions, and check the installed version.
+- Retain upgrade subprocess inputs, outputs, failures, governance hashes and
+  rendered turns alongside qualification reports. The render daemon remains
+  experimental and unshipped after its cache/ownership counterexamples.
 
 ### Bug Fixes
 
