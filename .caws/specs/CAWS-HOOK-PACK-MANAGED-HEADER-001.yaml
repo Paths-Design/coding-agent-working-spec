@@ -2,9 +2,10 @@ id: CAWS-HOOK-PACK-MANAGED-HEADER-001
 title: 'Restore the managed-header contract across the shipped hook pack and repair the codex envelope assertion'
 risk_tier: 2
 mode: fix
-lifecycle_state: draft
+lifecycle_state: active
+worktree: wt-hook-header
 created_at: '2026-09-13T03:14:21.951Z'
-updated_at: '2026-09-13T03:14:29.845Z'
+updated_at: '2026-09-13T03:15:03.012Z'
 created_by_session: 'session-37dee8d4-0742-4d58-922e-c6f86eb38c89'
 blast_radius:
   modules:
