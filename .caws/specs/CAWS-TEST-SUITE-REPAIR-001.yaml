@@ -12,7 +12,6 @@ blast_radius:
     - 'packages/caws-cli shell command metadata (message group enumeration)'
     - 'packages/caws-cli reprieve command (AGENT_SESSION_VARS export)'
   data_migration: false
-  operational_rollback_slo: 5m
 scope:
   in:
     - packages/caws-cli/src/shell/command-metadata.ts
