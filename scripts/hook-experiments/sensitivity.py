@@ -19,6 +19,13 @@ REPO = Path(__file__).resolve().parents[2]
 TEMPLATES = REPO / 'packages/caws-cli/templates/hook-packs'
 TEST = REPO / 'packages/caws-cli/tests/hooks/pytest/test_machine_hook_selection.py'
 CASES = [
+    ('handler-attribution', 'shared/session_log_renderer.py',
+     '"status": hook_handler_status(row, stdout),',
+     '"status": "block" if row.get("adapter_exit_code") == 2 else row.get("status"),',
+     'fidelity:test_mixed_handler_decisions_keep_per_handler_attribution'),
+    ('codex-default', 'codex/hooks/lib/parse-input.sh',
+     '_caws_write_session_envelope codex', '_caws_write_session_envelope claude-code',
+     'test_surface_compatibility_helpers_preserve_defaults_without_bootstrap_flags'),
     ('renderer-lock', 'shared/session_log_renderer.py', 'fcntl.flock(lock, fcntl.LOCK_EX)',
      'pass  # sensitivity mutant: no writer serialization',
      'fidelity:test_concurrent_renderers_lock_before_reading_and_leave_one_current_generation'),
@@ -79,6 +86,8 @@ def main():
         # Match the decision-bearing assertion; arbitrary setup assertions are inconclusive.
         stderr = (base / name / 'mutant/stderr').read_text()
         expected_assertion = {
+            'handler-attribution': "self.assertEqual({name:item['status'] for name,item in contexts.items()},",
+            'codex-default': "self.assertEqual(json.loads(artifact.read_text())['platform'], expected)",
             'renderer-lock': 'second renderer read inputs while first held the lock',
             'source-digest': "self.assertEqual(record['source_sha256'], selected['handlers'][0]['sha256'])",
             'denial-priority': 'self.assertEqual(denied.returncode, 2, denied.stderr)',
