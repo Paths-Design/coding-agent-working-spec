@@ -73,3 +73,7 @@ evidence:
     status: pass
     evidence_ref: npx jest tests/init/init-hook-pack-render.test.js (A1 green; every marker-bearing template also carries edit_stance)
     recorded_at: "2026-09-13T03:48:09.100Z"
+  - criterion_id: A2
+    status: pass
+    evidence_ref: "init probe: codex init then claude-code/qwen-code/codex re-init all exit 0 with 0 unmarked collisions (was exit 1, 13 files)"
+    recorded_at: "2026-09-13T03:48:10.106Z"
