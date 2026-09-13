@@ -4,7 +4,7 @@ risk_tier: 2
 mode: chore
 lifecycle_state: active
 created_at: '2026-09-13T05:09:46.014Z'
-updated_at: '2026-09-13T05:09:46.014Z'
+updated_at: '2026-09-13T05:22:27.488Z'
 created_by_session: '01a097e1-0a6f-7821-80d8-dedde2ac2cd6'
 blast_radius:
   modules:
@@ -14,6 +14,7 @@ operational_rollback_slo: 5m
 scope:
   in:
     - 'docs/audits/hook-port-qualification.md'
+    - .tmp/caws-hook-live-adoption/
   out: []
 invariants:
   - 'Install only the reviewed merged source; retain previous CLI and runtime for rollback and preserve project customizations.'
