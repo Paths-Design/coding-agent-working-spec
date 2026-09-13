@@ -4,7 +4,7 @@ risk_tier: 2
 mode: fix
 lifecycle_state: draft
 created_at: '2026-09-13T03:14:21.951Z'
-updated_at: '2026-09-13T03:14:21.951Z'
+updated_at: '2026-09-13T03:14:29.845Z'
 created_by_session: 'session-37dee8d4-0742-4d58-922e-c6f86eb38c89'
 blast_radius:
   modules:
@@ -14,6 +14,21 @@ operational_rollback_slo: 5m
 scope:
   in:
     - 'TODO: list the file(s) or directories this spec authorizes.'
+    - packages/caws-cli/templates/hook-packs/shared/hook-utilities.sh
+    - packages/caws-cli/templates/hook-packs/shared/lib/hook-utilities.py
+    - packages/caws-cli/templates/hook-packs/shared/lib/transcript-store.py
+    - packages/caws-cli/templates/hook-packs/shared/lib/harness_claude.py
+    - packages/caws-cli/templates/hook-packs/shared/lib/harness_codex.py
+    - packages/caws-cli/templates/hook-packs/shared/lib/harness_common.py
+    - packages/caws-cli/templates/hook-packs/shared/lib/harness_dsh.py
+    - packages/caws-cli/templates/hook-packs/shared/lib/harness_kimi.py
+    - packages/caws-cli/templates/hook-packs/shared/lib/harness_opencode.py
+    - packages/caws-cli/templates/hook-packs/shared/lib/harness_qwen.py
+    - packages/caws-cli/templates/hook-packs/shared/lib/harness_zcode.py
+    - packages/caws-cli/templates/hook-packs/shared/lib/ask-capability.sh
+    - packages/caws-cli/templates/hook-packs/shared/lib/bash-mutation-targets.sh
+    - packages/caws-cli/templates/hook-packs/shared/lib/session-log.schema.json
+    - packages/caws-cli/tests/shell/session/resolver-guard-divergence.test.js
   out: []
 invariants:
   - 'TODO: describe one invariant this spec guarantees.'
