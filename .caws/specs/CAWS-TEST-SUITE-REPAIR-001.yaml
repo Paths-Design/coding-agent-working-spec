@@ -75,3 +75,7 @@ evidence:
     status: pass
     evidence_ref: npx jest tests/docs/cli-help-context.test.js (cleanup-leaf test green; description text unchanged)
     recorded_at: "2026-09-13T02:03:11.182Z"
+  - criterion_id: A3
+    status: pass
+    evidence_ref: "npx jest tests/ci/mutation-contract.test.js (validator 145/19, pin matches)"
+    recorded_at: "2026-09-13T02:03:11.773Z"
