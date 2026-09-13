@@ -66,3 +66,11 @@ evidence:
     exit_code: 0
     artifact_path: /private/tmp/caws-hook-repairs-20260913/governance-observations.json
     commit_sha: a63a6cfae784c676728751c5c546b64e5954700d
+  - criterion_id: A2
+    status: pass
+    evidence_ref: "Installed Kimi snapshots, mixed handler attribution, compatibility defaults and raw dispatch receipts"
+    recorded_at: "2026-09-13T05:02:01.888Z"
+    command: /Users/darianrosebrook/Desktop/Projects/caws/packages/caws-cli/tests/hooks/pytest/.venv/bin/python -m pytest -q packages/caws-cli/tests/hooks/pytest
+    exit_code: 0
+    artifact_path: /private/tmp/caws-hook-repairs-20260913/full-pytest
+    commit_sha: a63a6cfae784c676728751c5c546b64e5954700d
