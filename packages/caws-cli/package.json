@@ -44,6 +44,7 @@
     "test:watch": "npm run build && jest --watch",
     "test:bats": "npm run build && bats tests/hooks/bats",
     "test:bats:macos": "npm run build && bats tests/hooks/bats-macos",
+    "pretest:pytest": "npm run build",
     "test:pytest": "python3 -m venv tests/hooks/pytest/.venv && tests/hooks/pytest/.venv/bin/pip install -q -r tests/hooks/pytest/requirements.txt && tests/hooks/pytest/.venv/bin/pytest tests/hooks/pytest",
     "test:cleanup": "node scripts/cleanup-tests.js",
     "lint": "npx eslint . && bash scripts/lint-shell.sh",

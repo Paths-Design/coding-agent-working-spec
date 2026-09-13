@@ -229,14 +229,18 @@ Command: `python3 scripts/hook-experiments/qualify-render-daemon.py
 --candidate-hooks ../sterling/.caws/hooks --output <scratch>/daemon-candidate-runtime`
 (using the absolute Sterling path in the retained argv). The sandbox denied the
 first loopback bind; the isolated rerun with loopback permission exited 0.
-That exit means all four falsification scenarios reproduced, not adoption success.
+That historical exit meant all four predicates matched, not adoption success.
+Review subsequently found the source-change predicate insufficient: an `ok`
+response and a comment-only edit cannot establish stale execution. The behavioral
+replacement and independently executed controls are recorded below.
 `daemon-candidate-runtime/qualification.json` reports `adoption: refused`:
 
 - A sidecar append returned `ok 2 0 cached`; output hash stayed
   `e41cdd1fbf01dedd05fad900e2f354df0f3a42c2a5060ff357c5d18acd4cb458` and the new
   outcome was absent.
 - A corrupted turn file returned `ok 3 0 cached` and retained the corruption.
-- Changed source bytes with preserved mtime returned `ok 4 0 cached`.
+- Changed source bytes with preserved mtime returned `ok 4 0 cached`; this original
+  observation alone did not establish a source-freshness counterexample.
 - An expired lease naming an unrelated experiment-owned child caused that child
   to exit -15. No live agent PID or lease was used.
 
@@ -411,3 +415,113 @@ session's removed `wt-advisory-budget` cwd, and the warnings include existing
 legacy pack drift and missing foreign-owner leases. Those states were not repaired
 or taken over. The selected global runtime remains the previously installed
 version; source qualification does not silently replace it.
+
+## Review repairs, 2026-09-13
+
+Spec: `CAWS-HOOK-REVIEW-REPAIRS-001`. The seven must-fix findings were handled
+before the experiment-verdict repair. Artifacts below are retained under
+`/private/tmp/caws-hook-repairs-20260913/`; they are generated local evidence,
+not tracked source or a claim of remote CI/native deployment.
+
+| Finding | Repair and regression evidence |
+|---|---|
+| Mutations hidden by redirections or absolute wrappers | Preserve argv across redirections, including option values and FD prefixes, and recognize absolute `env`. `governance-red.command.json` exits 1; `governance-green.command.json` exits 0 (19 tests). `governance-observations.json` retains installed foreign refusals (2), owned destination/read-source/prose admissions (0), and the unchanged sentinel SHA256. `redirection-fd-red.stderr` records the quoted-numeric-operand counterexample; `mutation-green.command.json` exits 0 after repair (12 tests). |
+| Repeat initialization refuses newly managed support files | The earlier header lane supplied the repair. `reinit/summary.json` records two real `node <lane>/packages/caws-cli/dist/index.js init --agent-surface codex` calls, both exit 0. `reinit/second.stdout` reports `Unchanged (73)`; all 144 hashed hook/pristine files retain their bytes. `distribution-jest.command.json` exits 0 (81 installation/header/fingerprint cases). |
+| Logical versus physical root causes false refusal | Normalize both sides of the cross-repository comparison. `governance-observations.json` records logical/physical root controls: own writes 0, foreign writes 2. `governance-bats.command.json` exits 0 (24 cases using ordinary macOS TMPDIR). |
+| Kimi structured output crashes | Restore the JSON import; exercise string, object, list, null and zero through installed Stop. `logging-red.stderr` contains the prior NameError. Installed fixtures retain each result in `kimi-result-<n>.turn.json`, including Unicode and error status. |
+| Every handler blamed for a chain refusal | Derive status from each handler's own exit/envelope and retain adapter exit separately. `attribution-red.stderr` records all three handlers incorrectly blocked. The repaired mixed turn contains `success.sh=completed`, `ask.sh=ask`, `deny.sh=block`, raw exits all 0, adapter exits all 2, and `delivery=not_observed`. |
+| Surface defaults lost through shared delegation | Codex supplies its own default without overriding an explicit platform; Kimi retains exit promotion without bootstrap flags. `logging-observations.json` records default `codex`, explicit `dsh`, and Kimi exits `0→0, 1→2, 2→2`. `logging-bats.command.json` exits 0 (35 preservation cases). |
+| pytest assumes prebuilt installer | `pretest:pytest` runs the production build. `entrypoint-red.stderr` reproduces `MODULE_NOT_FOUND` in a source-only package. `entrypoint-green.command.json` exits 0; `entrypoint-*/command.json` records dist absent before/build present after, and `selection-*/repo/marker.log` contains `invoked`. The regression narrows the inner test command; build and runtime are real. Pip installation and remote CI are outside this control. |
+
+The installed logging run in `logging-green.command.json` exits 0 (52 tests).
+`logging-jest.command.json` exits 0 (82 adapter, resolver and fingerprint cases).
+The initial mixed-chain fixture incorrectly expected a handler after a deny to
+execute; that fixture was corrected before the decision-bearing red run in
+`attribution-red`. Later fixtures preserve separate dispatch and render receipts
+and each Kimi turn snapshot so successive renders cannot overwrite the evidence.
+Shared/Codex/Kimi pack versions are 75/25/9, with updated fingerprint baselines.
+
+### Discriminating daemon qualification
+
+The source probe appends an execution marker to a disposable renderer copy,
+changes `source-a` to same-length `source-b`, and preserves mtime. An independent
+fresh interpreter must execute `source-b` and produce a parseable turn before the
+warm request is judged. Missing or malformed markers are instrumentation failures,
+not successful qualification. Exit 0 now means a completed experiment; the report's
+adoption field separately remains `refused` or `unproven`.
+
+`daemon-controls.command.json` exits 0 (four controls). Real renderer calls using
+cached and freshly loaded modules return identical `ok 2 1 rendered` responses;
+`source-control-*/source-freshness.json` distinguishes their markers and verdicts.
+These are controlled module-cache tests, not a native daemon transport claim.
+Missing cold and missing warm markers each raise instead of producing a verdict.
+
+The real candidate replay is `daemon-candidate-loopback.command.json` (exit 0).
+The first sandboxed attempt could not bind loopback; the approved rerun used only
+experiment-owned child processes. Its `qualification.json` retains:
+
+- Sidecar append: `ok 2 0 cached`; before and after output SHA256 both
+  `6352b2af4181a9c689c88a8c3c02e4a07e14be8a7c74e3acd9caabf182ab139c`;
+  `new_observation_present` is false.
+- Corrupted output: `ok 3 0 cached`; output remains
+  `corrupted same-count artifact`.
+- Source change: mtime and size both preserved; fresh process 46295 emits
+  `source-b`, while the warm marker remains `source-a` from process 46091.
+  `fresh-source.command.json`, `fresh-source-control/turn-001.json` and both
+  `.qualification-source-execution.json` files retain independent evidence.
+- The reaper exits 0 and the unrelated experiment-owned child 46426 exits -15.
+  This is an ownership-binding counterexample, not actual OS PID-reuse proof.
+
+The candidate remains refused and unshipped. Before adopting it, inspect a replay
+with code/sidecar/output content validation, process-start identity binding, and
+serialized fallback writers; then examine timeout and concurrent-write receipts.
+
+`daemon-reloading-control.command.json` supplies the other direction over real
+loopback transport (exit 0). Its disposable daemon reloads the renderer and
+bypasses the render-result cache on each request; `reloading-control-input/control.json`
+records the exact change and hashes. The warm process 95438 and independent
+process 95488 both emit `source-b`; source freshness has `counterexample: false`.
+Sidecar inclusion and corruption repair also become observable. The remaining
+reaper counterexample keeps adoption refused. This intentionally slow control is
+not a proposed production daemon patch or a latency result.
+
+### Test sensitivity and proof limits
+
+`repair-sensitivity/summary.json` records matched green controls (exit 0) and
+assertion failures (exit 1) after deliberately restoring chain-wide blame and
+Codex's wrong default in disposable template copies. The failures match the
+specific attribution/platform assertions. This establishes sensitivity for one
+selected defect in each of `session_log_renderer.py` and Codex `parse-input.sh`;
+it is not an exhaustive per-file mutation score. Governance and Kimi defects
+also have incident-matched red/green fixtures rather than pass counts alone.
+
+Tests could still pass while a harness selects older installed bytes, ignores a
+denial, or never delivers an advisory. No global runtime was updated; no fresh
+native harness activation, recipient visibility, actual prevented tool write,
+remote CI, classifier accuracy, or production latency was verified here. Before
+making those claims, inspect native SessionStart/PreToolUse/Stop records, selected
+paths/digests, actual refused/allowed tool results, and resulting files. The shell
+recognizer remains a bounded parser; these regressions do not establish complete
+Bash grammar coverage. Corpus commands were not executed or relabeled.
+
+### Final validation for the repair lane
+
+Every command below has a corresponding `<label>.command.json`, `.stdout` and
+`.stderr` under the repair scratch root. These receipts include cwd, argv, exit
+and duration; the installed pytest fixtures additionally retain runtime files.
+
+| Label / command | Exit | Observed result |
+|---|---:|---|
+| `full-pytest`: `<pytest-venv>/bin/python -m pytest -q packages/caws-cli/tests/hooks/pytest` | 0 | 225 passed; 17 pre-existing datetime deprecation warnings. `full-pytest/selection-c329a2_j/kimi-result-1.turn.json` retains `{"text": "résultat", "count": 0}` with `is_error: true`; the other four snapshots retain string, list, null and zero. `selection-iw55i6zy/mixed-handlers.command.json` retains dispatch exit 2 and the deny envelope, separately from the Stop render receipt. |
+| `full-jest`: `node <repo>/node_modules/jest/bin/jest.js --runInBand` from the CLI package | 0 | 2,761 passed across 220 suites (1,244.668 seconds). |
+| `full-bats`: `node_modules/.bin/bats packages/caws-cli/tests/hooks/bats packages/caws-cli/tests/hooks/bats-macos` | 1 | 275 passed, seven process-identity fixtures failed inside the sandbox. `sandbox-ps.json` records `PermissionError: Operation not permitted` when launching `ps`. |
+| `bats-process-controls`: Bats with the seven failed names selected across `block-dangerous.bats`, `session-id-agent-pid.bats`, `session-id-canonical.bats` | 0 | All seven pass unchanged with approved process access. These existing fixtures clean up their sentinel files; their retained evidence is the TAP output, not a preserved native session trace. The full suite was not rerun outside the sandbox. |
+| `build-logging`, `final-typecheck`, `final-lint`: package build, typecheck and lint | 0 | TypeScript compilation/checks and ESLint pass; Bash syntax checks pass for 64 scripts. Informational ShellCheck warnings remain in the retained lint output. |
+| `entrypoint-artifacts`: source-only entrypoint regression with a previously absent artifact directory | 0 | Real build and installed marker pass; the requested scratch root is created and receipts retained. This is the only test-source adjustment after the full pytest run. |
+| `final-gates`: `caws gates run --spec CAWS-HOOK-REVIEW-REPAIRS-001` | 0 | All five declared gates pass, zero violations. |
+| `final-doctor`: installed `caws doctor`; `source-doctor`: built CLI `doctor` | 1 | Existing foreign session's missing `wt-advisory-budget` cwd and seven warnings remain. Built CLI reports 1E/7W/15I; installed CLI reports 1E/7W/14I. No foreign ownership or machine configuration was changed. |
+
+The passing rerun closes the process-access explanation for those seven fixture
+failures. It does not establish actual OS PID reuse, a global runtime update, or
+any native harness delivery claim. The read-only lane review reports every source
+commit in scope; acceptance evidence is recorded separately through the CAWS CLI.

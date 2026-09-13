@@ -115,6 +115,9 @@ if command -v resolve_canonical_dir >/dev/null 2>&1; then
 else
   PROJECT_DIR="${CAWS_PROJECT_DIR:-.}"
 fi
+# Compare the same physical identity used by abspath for mutation targets.
+# A logical alias such as /tmp or a symlinked project root is still this repo.
+PROJECT_DIR="$(_realpath "$PROJECT_DIR")"
 
 [[ -f "$PROJECT_DIR/.caws/worktrees.json" ]] || exit 0
 

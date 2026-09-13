@@ -43,6 +43,37 @@ class BashMutationBoundary(unittest.TestCase):
         self.assertEqual(self.scan('echo ">" "rm victim"'), [])
         self.assertEqual(self.scan('echo text > "a b.txt"'), ['a b.txt'])
 
+    def test_redirections_do_not_end_argv_or_supply_option_values(self):
+        cases = {
+            'touch < input.txt target.txt': ['target.txt'],
+            'touch first.txt > output.log second.txt': ['output.log', 'first.txt', 'second.txt'],
+            'touch -r < input.txt reference.txt target.txt': ['target.txt'],
+            'cp source.txt > output.log target.txt': ['output.log', 'target.txt'],
+            'cp source.txt target.txt 2>> output.log': ['output.log', 'target.txt'],
+            'cp 0< input.txt source.txt target.txt': ['target.txt'],
+            'touch "2"> output.log': ['output.log', '2'],
+            'touch \\2> output.log': ['output.log', '2'],
+            'touch target.txt>&2': ['target.txt'],
+            "sed -i -e < input.txt 's/a/b/' target.txt": ['target.txt'],
+            'tee first.log > second.log third.log': ['second.log', 'first.log', 'third.log'],
+            'git < input.txt restore target.txt': ['target.txt'],
+            'cat < input.txt > output.log': ['output.log'],
+            'echo "touch target.txt" > output.log': ['output.log'],
+        }
+        for command, targets in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(self.scan(command), targets)
+        dynamic = self.scan('touch < input.txt "$TARGET"', 'caws_bash_dynamic_mutations')
+        self.assertEqual(dynamic, ['$TARGET\tparameter\t\tnone\t' + str(self.base)])
+
+    def test_absolute_wrappers_preserve_the_executable_position(self):
+        for command in ('/usr/bin/env touch target.txt',
+                        '/usr/bin/env -u NAME A=1 /usr/bin/touch target.txt',
+                        'command /usr/bin/env touch target.txt'):
+            with self.subTest(command=command):
+                self.assertEqual(self.scan(command), ['target.txt'])
+        self.assertEqual(self.scan('echo /usr/bin/env touch target.txt'), [])
+
     def test_multiple_nested_spans_keep_their_own_token_boundaries(self):
         command = 'echo "$(touch first.txt)$(touch \'second file.txt\')$(touch third.txt)"'
         self.assertEqual(self.scan(command), ['first.txt', 'second file.txt', 'third.txt'])

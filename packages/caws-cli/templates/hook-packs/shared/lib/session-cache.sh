@@ -18,14 +18,15 @@
 # or refuse a tool call. Directory-relative I/O refuses symlink redirection;
 # exclusive temporary files and atomic rename preserve complete JSON readers.
 
-_write_durable_session_envelope() {
+_caws_write_session_envelope() {
+  local default_surface="${1:-claude-code}"
   local sid="${HOOK_SESSION_ID:-}" cwd="${HOOK_CWD:-$PWD}" common repo_root
   [[ -n "$sid" && "$sid" != unknown ]] || return 0
   common=$(cd "$cwd" 2>/dev/null && git rev-parse --git-common-dir 2>/dev/null) || return 0
   case "$common" in /*) ;; *) common="$cwd/$common" ;; esac
   repo_root=$(cd "$common/.." 2>/dev/null && pwd -P) || return 0
   [[ -d "$repo_root/.caws" ]] || return 0
-  python3 - "$repo_root" "$sid" "${HOOK_EVENT_NAME:-unknown}" "${CAWS_PLATFORM_FLAG:-claude-code}" <<'PY'
+  python3 - "$repo_root" "$sid" "${HOOK_EVENT_NAME:-unknown}" "${CAWS_PLATFORM_FLAG:-$default_surface}" <<'PY'
 import datetime
 import json
 import os
@@ -95,4 +96,8 @@ finally:
         os.close(fd)
 PY
   return 0
+}
+
+_write_durable_session_envelope() {
+  _caws_write_session_envelope claude-code
 }

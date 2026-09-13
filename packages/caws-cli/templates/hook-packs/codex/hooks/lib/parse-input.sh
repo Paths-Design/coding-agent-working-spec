@@ -302,3 +302,9 @@ parse_hook_input() {
 _caws_cache_lib="${CAWS_SHARED_LIB_DIR:-${CAWS_PROJECT_DIR:-.}/.caws/hooks/lib}/session-cache.sh"
 source "$_caws_cache_lib" || return 2
 unset _caws_cache_lib
+
+# Preserve the vendor entry point's default even without bootstrap flags.
+# An explicitly resolved platform still takes precedence in the shared writer.
+_write_durable_session_envelope() {
+  _caws_write_session_envelope codex
+}

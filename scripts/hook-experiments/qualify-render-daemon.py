@@ -14,6 +14,7 @@ import socket
 import subprocess
 import sys
 import time
+from source_freshness import instrument, qualify_source_change
 
 
 def sha(path):
@@ -35,6 +36,8 @@ def main():
     for name in source_names:
         shutil.copy2(args.candidate_hooks / name, candidate / name)
     source_hashes = {name: sha(candidate / name) for name in source_names}
+    source = candidate / 'session_log_renderer.py'
+    instrument(source)
     logs = root / 'session'
     logs.mkdir()
     transcript = root / 'transcript.jsonl'
@@ -88,15 +91,13 @@ def main():
             response = request('corrupted-output')
             results.append({'scenario':'same-count-output-corruption','response':response.strip(),
                             'output':target.read_text(), 'counterexample':target.read_text()=='corrupted same-count artifact'})
-            source = candidate / 'session_log_renderer.py'
-            stat = source.stat()
-            source.write_text(source.read_text()+'\n# source changed without mtime change\n')
-            os.utime(source,ns=(stat.st_atime_ns,stat.st_mtime_ns))
-            response = request('source-change-same-mtime')
-            results.append({'scenario':'source-change-same-mtime','response':response.strip(),
-                            'original_sha256':source_hashes['session_log_renderer.py'],
-                            'changed_sha256':sha(source),'mtime_preserved':source.stat().st_mtime_ns==stat.st_mtime_ns,
-                            'counterexample':response.startswith('ok ')})
+            # Restore the earlier corrupt output so source freshness is tested
+            # independently, with same-size executable source and a fresh control.
+            shutil.copy2(root / 'cold-turn.json', target)
+            render_kwargs = dict(zip(('log_dir','cwd','session_id','started_at','model',
+                'branch','head_sha','dirty_count','start_sha','transcript_path',
+                'audit_path','hook_outcome_path'), fields))
+            results.append(qualify_source_change(source, logs, root, render_kwargs, request))
         finally:
             if child.poll() is None:
                 child.terminate()
@@ -128,7 +129,9 @@ def main():
                                'Remove reaper or bind process start identity','Serialize fallback writers before snapshot reads']}
     (root / 'qualification.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report,indent=2))
-    return 0 if all(row['counterexample'] for row in results) else 1
+    # Exit 0 means the experiment completed. A repaired candidate need not
+    # reproduce every defect; adoption is a separate, deliberately bounded field.
+    return 0
 
 
 if __name__ == '__main__':

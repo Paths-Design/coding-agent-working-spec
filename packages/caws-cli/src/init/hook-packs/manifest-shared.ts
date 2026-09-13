@@ -427,7 +427,7 @@ import { isAdapterCoveredSurface } from './types';
 // Managed-header contract repair (CAWS-HOOK-PACK-MANAGED-HEADER-001): every
 // managed template now carries a parseable header, so a fresh install is
 // re-adoptable by a later install or a second-surface init.
-export const SHARED_PACK_VERSION = 73;
+export const SHARED_PACK_VERSION = 75;
 
 /**
  * The vendored TELEMETRY rows: the turn-log fold (session-log.sh +
