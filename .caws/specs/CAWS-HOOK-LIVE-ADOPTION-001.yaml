@@ -1,0 +1,37 @@
+id: CAWS-HOOK-LIVE-ADOPTION-001
+title: 'Activate qualified hook repairs in the machine runtime and push source'
+risk_tier: 2
+mode: chore
+lifecycle_state: active
+created_at: '2026-09-13T05:09:46.014Z'
+updated_at: '2026-09-13T05:09:46.014Z'
+created_by_session: '01a097e1-0a6f-7821-80d8-dedde2ac2cd6'
+blast_radius:
+  modules:
+    - 'Standalone CLI snapshot, configured machine runtime, and push verification'
+  data_migration: false
+operational_rollback_slo: 5m
+scope:
+  in:
+    - 'docs/audits/hook-port-qualification.md'
+  out: []
+invariants:
+  - 'Install only the reviewed merged source; retain previous CLI and runtime for rollback and preserve project customizations.'
+acceptance:
+  - id: A1
+    given: 'merged reviewed hook repairs'
+    when: 'standalone CLI and runtime installation execute'
+    then: 'live snapshots match source bytes and runtime digests'
+  - id: A2
+    given: 'configured live hooks'
+    when: 'lifecycle and guarded scenarios execute'
+    then: 'retained runtime artifacts show current selection and expected behavior with native boundaries stated'
+  - id: A3
+    given: 'qualified committed source'
+    when: 'checks and the authorized push complete'
+    then: 'remote main matches the local head and the checkout is clean'
+non_functional: {}
+contracts:
+  - name: 'live-hook-adoption'
+    type: behavior
+    path: 'docs/audits/hook-port-qualification.md'
