@@ -83,6 +83,48 @@ class InstalledGovernanceBoundary(unittest.TestCase):
         ordinary = self.call('automatic-benign', command='wc -l README.md', mode='bypassPermissions')
         self.assertEqual(ordinary.returncode, 0, ordinary.stderr)
 
+    def test_wrappers_and_interleaved_redirections_keep_foreign_targets_visible(self):
+        self.seed()
+        before = self.foreign.read_bytes()
+        cases = [f'touch "{self.foreign}"', f'/usr/bin/env touch "{self.foreign}"',
+                 f'touch < /dev/null "{self.foreign}"',
+                 f'touch > owned.log "{self.foreign}"',
+                 f'cp source.txt > owned.log "{self.foreign}"']
+        for index, command in enumerate(cases):
+            with self.subTest(command=command):
+                result = self.call('argv-foreign-' + str(index), command=command)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn(b'DIFFERENT session', result.stderr)
+        for index, command in enumerate(['touch < /dev/null .caws/worktrees/mine/new.txt',
+                                         f'cp "{self.foreign}" > owned.log owned.txt',
+                                         f'echo /usr/bin/env touch "{self.foreign}"']):
+            result = self.call('argv-preserved-' + str(index), command=command)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.foreign.read_bytes(), before)
+        self.assertFalse((self.repo / 'owned.log').exists(), 'captured commands must remain inert')
+
+    def test_logical_and_physical_project_roots_have_the_same_ownership(self):
+        self.seed()
+        alias = self.root / 'repo-alias'
+        alias.symlink_to(self.repo, target_is_directory=True)
+        for label, project in [('physical', self.repo), ('logical', alias)]:
+            for target, expected in [('ordinary.txt', 0), (str(self.foreign), 2)]:
+                payload = {'session_id':'agent-a', 'cwd':str(project), 'tool_name':'Bash',
+                           'tool_input':{'command':'touch "' + target + '"'}}
+                argv = ['/bin/bash', str(self.runtime / 'bash-write-guard.sh')]
+                env = dict(self.env, CAWS_PROJECT_DIR=str(project), HOOK_CWD=str(project),
+                           CAWS_AGENT_SURFACE='claude-code')
+                result = subprocess.run(argv, cwd=project, env=env, capture_output=True,
+                                        input=json.dumps(payload).encode(), timeout=30)
+                receipt = {'argv':argv, 'input':payload, 'exit_code':result.returncode,
+                           'project':str(project), 'resolved_project':str(project.resolve()),
+                           'stdout':result.stdout.decode(), 'stderr':result.stderr.decode()}
+                (self.root / (label + '-' + str(expected) + '.command.json')).write_text(
+                    json.dumps(receipt, indent=2))
+                self.assertEqual(result.returncode, expected, result.stderr)
+                if expected == 2:
+                    self.assertIn(b'DIFFERENT session', result.stderr)
+
     def test_write_payload_uncertainty_and_canonical_claim_from_owned_lane(self):
         self.seed('worktree-write-guard.sh')
         self.registry['foreign'].pop('owner')

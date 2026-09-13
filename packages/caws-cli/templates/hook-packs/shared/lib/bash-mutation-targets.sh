@@ -83,6 +83,7 @@ _caws_lex_span() {
   local -a stack=( root )
   local cur=""        # accumulating token text
   local started=0     # is a token currently open
+  local curstart=0    # raw source start, for unquoted numeric fd prefixes
   local curctx=root   # context the current token started in
   local curdyn=0      # has the current token seen runtime-resolution syntax
   local curres=""     # which resolution kind, when curdyn is 1
@@ -197,7 +198,7 @@ _caws_lex_span() {
     CAWS_TOK_RESKIND+=( "" ); CAWS_TOK_PREFIX+=( "" )
     CAWS_TOK_PREFIX_BASIS+=( none ); CAWS_TOK_UNREPR+=( 0 )
   }
-  _open() { [[ $started -eq 1 ]] || { started=1; curctx="${stack[0]}"; }; }
+  _open() { [[ $started -eq 1 ]] || { started=1; curstart=$i; curctx="${stack[0]}"; }; }
 
   while [[ $i -lt $n ]]; do
     local c="${s:$i:1}" top="${stack[0]}"
@@ -334,6 +335,11 @@ _caws_lex_span() {
              CAWS_TOK_PREFIX_BASIS+=( none ); CAWS_TOK_UNREPR+=( 0 )
              i=$((i+1)); _caws_skip_cmdsub; continue
            fi
+           # Only raw, unquoted digits adjoining the operator name an fd.
+           # Quoted/escaped numeric words remain real argv entries.
+           if [[ $started -eq 1 && "$cur" =~ ^[0-9]+$ && "${s:$curstart:$((i-curstart))}" == "$cur" ]]; then
+             cur=""; started=0
+           fi
            if [[ "$c" == '<' ]]; then
              # An ordinary input redirect reads; it is not a mutation.
              _emit_op '<' input_redirect; i=$((i+1)); continue
@@ -344,11 +350,9 @@ _caws_lex_span() {
              # file writes. Detect structurally: current token is all digits and
              # the next byte is '&'.
              if [[ "${s:$((i+1)):1}" == '&' ]]; then
-               cur=""; started=0
+               _flush
                i=$((i+2))
                while [[ $i -lt $n && "${s:$i:1}" =~ [0-9-] ]]; do i=$((i+1)); done
-             elif [[ $started -eq 1 && "$cur" =~ ^[0-9]+$ ]]; then
-               cur=""; started=0; _emit_op '>' redirect; i=$((i+1))
              else
                _emit_op '>' redirect; i=$((i+1))
              fi
@@ -402,20 +406,48 @@ CAWS_REC_UNREPR=()
 # DYNAMIC and from UNREPR: they merely share conservative downstream handling.
 CAWS_REC_UNSUPPORTED=()
 
-# Is token $1 a control operator that ends an operand list?
-# A REDIRECT ends the current command's operand list exactly as a control
-# operator does. Testing only for `op` let every forward-walking verb arm
-# (tee/sed/perl and the git arms -- all seven call sites) run straight through a
-# redirect and consume its target as one of their own operands. Measured
-# 2026-09-11 over the frozen A6 population, both failure directions were live:
-#   sed 's/a/b/' > out.txt   emitted NOTHING -- a real write LOST, because the
-#                            sed arm ate the redirect and then found no -i
-#   tee a.log > b.log        emitted the literal `>` AS A PATH -- a fabrication
-# The arm now stops AT the redirect and the main loop adjudicates it normally,
-# so `tee a.log > b.log` yields both a.log and b.log.
+# Redirections are shell syntax, not argv entries or command terminators.
+# Project each simple command into redirects followed by its unchanged argv.
+# This keeps redirects out of option/value parsing even between an option and
+# its value. Targets are emitted before argv targets, as the shell processes
+# redirections before invoking the command (including cd). Original lexing and
+# the policy token carrier retain source order; only mutation scanning uses
+# this view. Every token's expansion/representability metadata moves with it.
+_caws_mutation_argv_view() {
+  local i=0 n=${#CAWS_TOK_VALUE[@]} index
+  local -a order=() redirects=() words=()
+  while [[ $i -lt $n ]]; do
+    case "${CAWS_TOK_KIND[$i]}" in
+      op)
+        order+=( ${redirects[@]+"${redirects[@]}"} ${words[@]+"${words[@]}"} "$i" )
+        redirects=(); words=() ;;
+      redirect|input_redirect)
+        redirects+=( "$i" )
+        if [[ $((i+1)) -lt $n && "${CAWS_TOK_KIND[$((i+1))]}" == word ]]; then
+          i=$((i+1)); redirects+=( "$i" )
+        fi ;;
+      *) words+=( "$i" ) ;;
+    esac
+    i=$((i+1))
+  done
+  order+=( ${redirects[@]+"${redirects[@]}"} ${words[@]+"${words[@]}"} )
+  local -a values=() kinds=() contexts=() dynamics=() resolution=() prefixes=() bases=() unrepr=()
+  for index in ${order[@]+"${order[@]}"}; do
+    values+=( "${CAWS_TOK_VALUE[$index]}" ); kinds+=( "${CAWS_TOK_KIND[$index]}" )
+    contexts+=( "${CAWS_TOK_CTX[$index]}" ); dynamics+=( "${CAWS_TOK_DYNAMIC[$index]}" )
+    resolution+=( "${CAWS_TOK_RESKIND[$index]}" ); prefixes+=( "${CAWS_TOK_PREFIX[$index]}" )
+    bases+=( "${CAWS_TOK_PREFIX_BASIS[$index]}" ); unrepr+=( "${CAWS_TOK_UNREPR[$index]}" )
+  done
+  CAWS_TOK_VALUE=( ${values[@]+"${values[@]}"} ); CAWS_TOK_KIND=( ${kinds[@]+"${kinds[@]}"} )
+  CAWS_TOK_CTX=( ${contexts[@]+"${contexts[@]}"} ); CAWS_TOK_DYNAMIC=( ${dynamics[@]+"${dynamics[@]}"} )
+  CAWS_TOK_RESKIND=( ${resolution[@]+"${resolution[@]}"} ); CAWS_TOK_PREFIX=( ${prefixes[@]+"${prefixes[@]}"} )
+  CAWS_TOK_PREFIX_BASIS=( ${bases[@]+"${bases[@]}"} ); CAWS_TOK_UNREPR=( ${unrepr[@]+"${unrepr[@]}"} )
+}
+
+# In the mutation view, only a control operator ends an argv list.
 _caws_tok_is_sep() {
   local k="${CAWS_TOK_KIND[$1]}"
-  [[ "$k" == op || "$k" == redirect || "$k" == input_redirect ]]
+  [[ "$k" == op ]]
 }
 # Is token $1 an option rather than an operand?
 _caws_tok_is_opt() { [[ "${CAWS_TOK_VALUE[$1]}" == -* ]]; }
@@ -469,6 +501,7 @@ _caws_bash_scan_tokens() {
     cmd="$(caws_blank_heredoc_bodies "$cmd")"
   fi
   _caws_lex "$cmd"
+  _caws_mutation_argv_view
   local _u=0
   while [[ $_u -lt ${#CAWS_TOK_VALUE[@]} ]]; do
     [[ "${CAWS_TOK_KIND[$_u]}" == unsupported_nesting ]] && \
@@ -504,12 +537,12 @@ _caws_bash_scan_tokens() {
       case "$wrapper:$t" in env:-u|env:--unset) i=$((i+2)) ;; *) i=$((i+1)) ;; esac
       continue
     fi
+    t="${t##*/}"
     case "$t" in
       env|command|builtin|exec) wrapper="$t"; i=$((i+1)); continue ;;
       if|then|elif|else|do|'!'|'{') i=$((i+1)); continue ;;
     esac
     command_start=0
-    t="${t##*/}"
     case "$t" in
       cd|pushd|popd) coordinate_changed=1 ;;
       tee)
