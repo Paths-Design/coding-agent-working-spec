@@ -214,6 +214,15 @@ describe('A5: SessionStart unbound advisory (agent-register.sh)', () => {
         CAWS_PROJECT_DIR: root,
         HOOK_SESSION_ID: 'sess-hook',
         HOOK_CWD: root,
+        // A5's claim is the unbound-advisory path, not machine-runtime drift.
+        // The hook's pack-staleness probe compares the fixture against the
+        // REAL machine runtime (~/.caws via inherited env) and emits a drift
+        // advisory on any machine whose installed snapshot lags the repo
+        // templates — which breaks the emits-nothing assertion below while
+        // saying nothing about the behavior under test. Silence exactly that
+        // advisory (its documented opt-out) so the suite verdict depends on
+        // the code under test, not the host's install state.
+        CAWS_PACK_STALENESS_CHECK: '0',
       },
     }).toString();
   }
