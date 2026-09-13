@@ -525,3 +525,103 @@ The passing rerun closes the process-access explanation for those seven fixture
 failures. It does not establish actual OS PID reuse, a global runtime update, or
 any native harness delivery claim. The read-only lane review reports every source
 commit in scope; acceptance evidence is recorded separately through the CAWS CLI.
+
+## Live machine adoption, 2026-09-13
+
+Spec: `CAWS-HOOK-LIVE-ADOPTION-001`. This section advances the earlier local-only
+boundary for the reviewed repairs; it does not adopt the refused daemon. The
+installation and check receipts live under
+`/private/tmp/caws-hook-live-20260913/`. Generated evidence remains outside the
+tracked ledger. The repair source at `4ca79ddd9723cf11c5deb4d292833d577e61dd3a`
+is unchanged by this operational slice.
+
+### Installed bytes and registration
+
+`cli-install.command.json` records exit 0 for
+`node scripts/install-cli-snapshot.mjs --package packages/caws-cli --bin /Users/darianrosebrook/.nvm/versions/node/v22.19.0/bin/caws --caws-home /Users/darianrosebrook/.caws`.
+The active standalone CLI is `12.2.0-rc.1`, installed under
+`~/.caws/lib/cli/56c59c3da31d41fc-oCvYOI/install/node_modules/@paths.design/caws-cli`;
+its package SHA256 is
+`56c59c3da31d41fc19c5dc6acd5b5c3301d7f87f138ddfde48ceb4bad399b640`.
+The version label did not change; the snapshot and bytes identify this update.
+
+`runtime-install.command.json` records `caws init adapters install --json`, exit 0.
+The active runtime digest is
+`94bff191a0b3a66797d55a9286fb26a71c3d1ecc890d3a91130c0b468ba165f3`.
+`live-byte-parity.json` contains eleven source/installed-package/runtime SHA256
+triples, all equal, including the lexer, write guard, classifier, renderer, Kimi
+reader, session cache, shared dispatcher, Codex parser and Kimi dispatcher.
+`live-selection.json` records the actual system launcher's selected paths and
+digests. `runtime-recheck.command.json` exits 0 and reports `changed: false`.
+The previous CLI snapshot `549db82cc4cbac3d-7xnQet` and runtime
+`db759a4ccb13108d81082cc8a64aa0172f32af5ebb9d90e21a7ae29ed321fc00`
+remain available for rollback.
+
+`codex-registration` and `claude-code-registration` receipts record
+`caws init adapters configure --agent-surface <surface> --plan --json`, both exit 0
+with `changed: false`, `changes: []`, `restartRequired: false`. Existing native
+registrations already launch the shared machine runtime. Project customizations
+were preserved; legacy project hook copies were not overwritten. The unsupported
+surface spelling `claude` was refused with exit 1 before the correctly named
+`claude-code` preview; no registration was changed by either preview.
+
+### Runtime artifacts and their limits
+
+The live launcher replay is retained at
+`.tmp/caws-hook-live-adoption/scenario-hciwz1ed/summary.json`, together with each
+command, input, stdout and stderr. Running
+`python3 .tmp/caws-hook-live-adoption/live-scenarios.py` exits 0. It calls the
+installed `~/.caws/bin/caws-hook codex <event> --system` against an initialized
+disposable repository: SessionStart 0, Read 0, top-level-file exemption 0,
+foreign-path Write 2, Stop 0. The refusal envelope says `decision: block` and
+names the foreign path. Its `repo/.caws/sessions/caws-live-adoption-fixture-20260913/`
+directory retains the envelope, lease-related observations, 31 handler records
+all naming the active runtime, and `turn-001.json`. The turn preserves user text
+`CAWS live runtime lifecycle control.`, command output
+`live runtime fixture output`, and `status: blocked`.
+
+This is a synthetic-payload replay of the real installed launcher. Neither the
+embedded command nor either proposed write was submitted to an execution tool;
+their absent output files alone therefore do not demonstrate prevention.
+Separately, `native-refusal.json` records an actual native Write refusal from this
+session at `2026-09-13T05:21:27Z`: invocation
+`32256c91-065f-4dc2-a296-6bd86fe0e75e`, tool call
+`exec-aa2eed67-1ef8-42d9-bbd4-086e910e0c1d`, scope handler exit 2, adapter exit 2,
+active runtime digest, and `outside_helper_exists: false`. The native tool returned
+the refusal and did not create the helper. Work continued only after adding an
+in-repository fixture path through the spec CLI. `native-current-events.json`
+retains actual PreToolUse/PostToolUse observations from this session.
+
+Failed setup runs were retained too: a substituted HOME disagreed with the
+configured native symlink target; sandbox permissions prevented creating the
+fixture's machine audit-cache directory; and an initial relative cwd was repaired.
+The absolute-cwd rerun still admitted the proposed top-level file. Source inspection
+identified the existing `REL_PATH`-without-slash exemption in `scope-guard.sh`;
+the final replay explicitly records that admission and tests foreign containment
+separately. This qualification does not assert that every unbound write is refused.
+
+### Checks and remaining non-claims
+
+`build-current` and `root-lint` command receipts exit 0. `dependency-audit-root`
+records `npm audit --package-lock-only --audit-level=low --include-workspace-root`;
+`consumer-audit` records `npm audit --omit=dev --audit-level=low --workspaces=false`
+inside the detached installation. Both exit 0 with `found 0 vulnerabilities`.
+The initial audit script lookup was a workspace-resolution failure, not an audit
+verdict. `live-gates` exits 0 with all five gates passing. `live-doctor` exits 1
+with the existing 1E/7W/15I findings, including another session's missing cwd.
+Foreign sessions and claims were left untouched.
+
+The exhaustive repair-suite results above remain the test baseline;
+`git diff --exit-code 4ca79ddd -- packages/caws-cli scripts` exits 0. They were not
+rerun after documentation and governance-only changes. This checkout's configured
+`.husky/_` wrapper files are absent, so check results are from explicit commands,
+not a claim that Git automatically ran the hook scripts.
+
+Passing fixtures could still miss a native harness dropping an advisory, a stale
+project override, or an unsupported shell form. Handler-return and adapter-handoff
+records do not establish recipient visibility. Not verified here: fresh native
+SessionStart/Stop across Codex, Claude and Kimi; every legacy project override;
+arbitrary shell semantics; classifier error rates; production latency; remote CI;
+or an npm release. Those claims require fresh per-harness native lifecycle and
+tool-result traces with matched source/input/output hashes, project selection
+inventories, and independently adjudicated semantic cases before broader claims.
