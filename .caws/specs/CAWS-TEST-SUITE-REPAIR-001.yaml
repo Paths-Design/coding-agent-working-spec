@@ -2,10 +2,11 @@ id: CAWS-TEST-SUITE-REPAIR-001
 title: 'Repair the failing/flaky test suite and retire environment-conditional skips'
 risk_tier: 2
 mode: fix
-lifecycle_state: active
-worktree: wt-test-repair
+lifecycle_state: closed
+resolution: completed
+closure_notes: 'Auto-closed by caws worktree merge wt-test-repair at 48e7c4f42f21dd5c02ac1be481c9469f4690e84d'
 created_at: '2026-09-13T01:44:58.237Z'
-updated_at: '2026-09-13T01:57:14.737Z'
+updated_at: '2026-09-13T02:07:12.706Z'
 created_by_session: 'session-37dee8d4-0742-4d58-922e-c6f86eb38c89'
 blast_radius:
   modules:
