@@ -1,0 +1,58 @@
+id: CAWS-HOOK-REVIEW-REPAIRS-001
+title: 'Repair reviewed hook recognition, transcript fidelity, and experiment qualification defects'
+risk_tier: 2
+mode: fix
+lifecycle_state: draft
+created_at: '2026-09-13T04:00:53.436Z'
+updated_at: '2026-09-13T04:00:53.436Z'
+created_by_session: '01a097e1-0a6f-7821-80d8-dedde2ac2cd6'
+blast_radius:
+  modules:
+    - 'Shared governance recognizer, surface adapters, log renderer, and hook qualification tests'
+  data_migration: false
+operational_rollback_slo: 5m
+scope:
+  in:
+    - 'packages/caws-cli/templates/hook-packs/shared/'
+    - 'packages/caws-cli/templates/hook-packs/codex/hooks/lib/parse-input.sh'
+    - 'packages/caws-cli/templates/hook-packs/kimi-code/hooks/lib/run-handlers.sh'
+    - 'packages/caws-cli/tests/hooks/'
+    - 'packages/caws-cli/tests/init/pack-fingerprints.json'
+    - 'packages/caws-cli/tests/shell/session/resolver-guard-divergence.test.js'
+    - 'packages/caws-cli/src/init/hook-packs/manifest-shared.ts'
+    - 'packages/caws-cli/src/init/hook-packs/manifest-codex.ts'
+    - 'packages/caws-cli/src/init/hook-packs/manifest-kimi-code.ts'
+    - 'packages/caws-cli/package.json'
+    - 'scripts/hook-experiments/'
+    - 'docs/audits/hook-port-qualification.md'
+  out: []
+invariants:
+  - 'Recognition never grants ownership; foreign writes remain refused while equivalent project paths remain admissible.'
+  - 'Logs distinguish per-handler decisions from adapter outcomes and preserve surface-specific identity and error contracts.'
+  - 'Captured commands remain inert and qualification requires discriminating runtime artifacts; generated artifacts stay untracked.'
+acceptance:
+  - id: A1
+    given: 'supported mutation commands and owned or foreign targets'
+    when: 'redirections, wrappers, and equivalent path spellings are exercised'
+    then: 'installed guards preserve required refusals and allowed operations with retained receipts'
+  - id: A2
+    given: 'Kimi outputs, mixed handler outcomes, and surface helpers'
+    when: 'installed logging and compatibility entry points run'
+    then: 'structured output survives, attribution is correct, and surface defaults remain intact'
+  - id: A3
+    given: 'a fresh checkout and unchanged installed hooks'
+    when: 'hook test setup and repeat installation run'
+    then: 'the local test entry point builds its installer and repeat init preserves bytes without refusals'
+  - id: A4
+    given: 'cache-aware and stale-code render daemons'
+    when: 'source bytes change without mtime changes'
+    then: 'qualification distinguishes executed old and new behavior with independent controls'
+  - id: A5
+    given: 'repaired source and regression tests'
+    when: 'package checks and CAWS gates run'
+    then: 'test sensitivity, runtime artifacts, unresolved environment constraints, and explicit non-claims are recorded'
+non_functional: {}
+contracts:
+  - name: 'hook-review-repairs'
+    type: behavior
+    path: 'docs/audits/hook-port-qualification.md'
