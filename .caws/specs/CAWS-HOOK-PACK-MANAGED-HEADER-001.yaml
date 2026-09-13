@@ -68,3 +68,8 @@ contracts:
   - name: 'hook-pack-managed-header'
     type: contract-test
     path: 'packages/caws-cli/tests'
+evidence:
+  - criterion_id: A1
+    status: pass
+    evidence_ref: npx jest tests/init/init-hook-pack-render.test.js (A1 green; every marker-bearing template also carries edit_stance)
+    recorded_at: "2026-09-13T03:48:09.100Z"
