@@ -8,6 +8,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import uuid
 
 EVENTS = {
     'pre_tool_use': 'PreToolUse', 'post_tool_use': 'PostToolUse',
@@ -193,11 +194,118 @@ def legacy_native_registered(canonical, surface, event):
     return False
 
 
+def describe_selection(identity, canonical, runtime, home, surface, event, hooks,
+                       handlers, libraries, overrides, adapter, system, inspect_local=True):
+    """Describe the same resolved selection execution uses, without invoking it.
+
+    Digests witness bytes at inspection time. They do not prove execution or
+    recursively discover libraries sourced by arbitrary project shell code.
+    """
+    entries = []
+    for entry in handlers:
+        name, *arguments = entry.split(' ')
+        target = Path(overrides[name]) if name in overrides else confined(hooks, name)
+        selected_hash = digest(target.read_bytes())
+        local = canonical / '.caws/hooks' / name
+        local_repair = None
+        if inspect_local and local.is_file() and local.resolve() != target.resolve():
+            local_hash = digest(local.read_bytes())
+            if local_hash != selected_hash:
+                local_repair = {'path': str(local), 'sha256': local_hash}
+        entries.append({'entry': entry, 'arguments': arguments,
+                        'path': str(target), 'sha256': selected_hash,
+                        'kind': 'project-override' if name in overrides else
+                                ('stock' if hooks == runtime else 'project-policy'),
+                        'unselected_local_difference': local_repair})
+    library_dirs = [runtime / 'lib', runtime / 'surfaces' / surface / 'lib',
+                    home / 'surfaces' / surface / 'lib']
+    names = set(libraries)
+    for directory in library_dirs:
+        if directory.is_dir():
+            names.update(p.name for p in directory.iterdir() if p.is_file())
+    resolutions = {}
+    for name in sorted(names):
+        candidates = ([(confined(canonical, libraries[name]), 'project')] if name in libraries else []) + [
+            (home / 'surfaces' / surface / 'lib' / name, 'user'),
+            (runtime / 'surfaces' / surface / 'lib' / name, 'surface'),
+            (runtime / 'lib' / name, 'shared')]
+        for target, kind in candidates:
+            if target.is_file():
+                resolutions[name] = {'path': str(target), 'sha256': digest(target.read_bytes()), 'kind': kind}
+                break
+    return {'schema': 'caws.hook_selection.v1', 'runtime_digest': identity,
+            'project': str(canonical), 'surface': surface, 'event': event,
+            'configuration': 'system' if system else 'project-policy',
+            'handlers': entries,
+            'library_resolution': resolutions,
+            'project_libraries': {name: {'path': str(confined(canonical, relative)),
+                                        'sha256': digest(confined(canonical, relative).read_bytes())}
+                                  for name, relative in libraries.items()},
+            'transcript_adapter': ({'path': adapter, 'sha256': digest(Path(adapter).read_bytes())}
+                                   if adapter else None),
+            'limits': ['Selection is not execution.',
+                       'Project scripts may source further dependencies.',
+                       'Library resolution describes caws_source_lib lookups, not observed imports.',
+                       'Reprieves and runtime disable lists can skip selected handlers.']}
+
+
+def retain_execution_records(path, canonical, selection, invocation_id, raw, result):
+    """Append occurrence-qualified handler observations to each resolved session.
+
+    Single append writes avoid interleaving ordinary concurrent records. These
+    operational artifacts confer no authority. Report I/O failure rather than
+    disguising absent records as a successful capture.
+    """
+    try:
+        selected = {row['path']: row for row in selection['handlers']}
+        lines = Path(path).read_text().splitlines()
+        if selected and not lines:
+            raise ValueError('selected runner produced no execution records')
+        for number, line in enumerate(lines):
+            row = json.loads(line)
+            if not isinstance(row, dict):
+                raise ValueError('execution record must be an object')
+            sid = row.get('session_id', '')
+            if not isinstance(sid, str) or not re.fullmatch(r'[A-Za-z0-9_.@:-]+', sid) or sid in {'.', '..'}:
+                raise ValueError('execution record has no safe resolved session identity')
+            source = selected.get(row.get('path'))
+            if source is None:
+                raise ValueError('execution record names an unselected handler')
+            row.update(schema='caws.hook_execution.v1', invocation_id=invocation_id,
+                       handler_index=number, runtime_digest=selection['runtime_digest'],
+                       surface=selection['surface'], source_sha256=source['sha256'],
+                       source_digest_boundary='before_dispatch',
+                       observation_boundary='handler_return', delivery='not_observed',
+                       input_sha256=digest(raw),
+                       adapter_exit_code=result.returncode if result is not None else None)
+            target = confined(canonical, f'.caws/sessions/{sid}/hook-events.jsonl')
+            target.parent.mkdir(parents=True, exist_ok=True)
+            data = (json.dumps(row, separators=(',', ':')) + '\n').encode()
+            fd = os.open(target, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+            try:
+                if os.write(fd, data) != len(data):
+                    raise OSError('partial execution record append')
+            finally:
+                os.close(fd)
+    except (OSError, ValueError, TypeError) as error:
+        print('[caws execution record] incomplete: ' + str(error), file=sys.stderr)
+
+
 def main():
-    system_entry = len(sys.argv) == 4 and sys.argv[3] == '--system'
-    if (len(sys.argv) != 3 and not system_entry) or sys.argv[1] not in SURFACES or sys.argv[2] not in EVENTS:
-        raise ValueError('Usage: caws-hook <surface> <pre_tool_use|post_tool_use|session_start|stop|pre_compact>')
+    flags = sys.argv[3:]
+    system_entry = '--system' in flags
+    describe = '--describe' in flags
+    if (len(sys.argv) < 3 or len(flags) != len(set(flags)) or
+            set(flags) - {'--system', '--describe'} or
+            sys.argv[1] not in SURFACES or sys.argv[2] not in EVENTS):
+        raise ValueError('Usage: caws-hook <surface> <pre_tool_use|post_tool_use|session_start|stop|pre_compact> [--system] [--describe]')
     surface, event = sys.argv[1:3]
+    def inactive(reason):
+        if describe:
+            print(json.dumps({'schema': 'caws.hook_selection.v1', 'status': 'inactive',
+                              'surface': surface, 'event': event, 'reason': reason,
+                              'handlers': []}, sort_keys=True))
+        return 0
     home = Path(os.environ.get('CAWS_HOME', str(Path.home() / '.caws')))
     if not home.is_absolute():
         raise ValueError('CAWS_HOME must be absolute')
@@ -221,7 +329,7 @@ def main():
     for relative, expected in manifest.items():
         if digest(confined(runtime, relative).read_bytes()) != expected:
             raise ValueError(f'Runtime modified: {relative}')
-    raw = sys.stdin.buffer.read()
+    raw = b'{}' if describe else sys.stdin.buffer.read()
     payload = json.loads(raw or b'{}')
     if not isinstance(payload, dict):
         raise ValueError('Hook input must be an object')
@@ -234,29 +342,29 @@ def main():
         probe = Path(candidate).absolute()
         if any((p / '.git').exists() or (p / '.caws').exists() for p in [probe, *probe.parents]):
             raise
-        return 0
+        return inactive('outside a Git project')
     common = Path(git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
     canonical = common.parent
     known_project = confined(home, 'state/projects/' + digest(str(canonical).encode()) + '.json').exists()
     if not (canonical / '.caws').exists():
         if known_project:
             raise ValueError('Adopted project governance is missing')
-        return 0
+        return inactive('project governance is absent')
     # Native user and project hooks are additive. The explicit user transport
     # waits for the one-time project registration retirement; old cached local
     # adapter entries still execute their policy during the transition.
     if system_entry and legacy_native_registered(canonical, surface, event):
-        return 0
+        return inactive('legacy native registration remains selected')
     # Session caches alone never opt a repository into governance. Legacy
     # governance remains on its existing harness integration until migration;
     # a user-level registration cannot reinterpret that authority schema.
     if system_entry and not known_project and (not (canonical / '.caws/policy.yaml').is_file() or not (canonical / '.caws/specs').is_dir() or (canonical / '.caws/working-spec.yaml').exists()):
         if event == 'session_start' and (canonical / '.caws/working-spec.yaml').exists():
             print('[caws system runtime] Legacy governance remains on its existing integration; migrate governance before system adoption.', file=sys.stderr)
-        return 0
+        return inactive('project governance requires migration')
     system = system_configuration(home, canonical, runtime, surface, event)
     if system_entry and system is None:
-        return 0
+        return inactive('system surface is disabled or project policy remains selected')
     if system is not None:
         if not confined(canonical, '.caws/policy.yaml').is_file() or not confined(canonical, '.caws/specs').is_dir() or (canonical / '.caws/working-spec.yaml').exists():
             raise ValueError('Project governance requires migration before system hooks can run')
@@ -265,7 +373,7 @@ def main():
         hooks, handlers, libraries = project_configuration(canonical, surface, event)
         overrides = {}
         if hooks is None:
-            return 0
+            return inactive('project policy has no handler chain for this event')
     if not isinstance(handlers, list):
         raise ValueError('Handlers must be an ordered array')
     for handler in handlers:
@@ -298,10 +406,6 @@ def main():
                CAWS_SYSTEM_RUNTIME='1' if system is not None else '0',
                CAWS_ADAPTER_RUNTIME_DIGEST=identity,
                CAWS_AGENT_SURFACE=surface)
-    settlement_file = tempfile.NamedTemporaryFile(
-        prefix='caws-hook-offers-', suffix='.jsonl', delete=False)
-    settlement_file.close()
-    env['CAWS_HOOK_SETTLEMENT_FILE'] = settlement_file.name
     if system is not None:
         project_key = digest(str(canonical).encode())
         env['CAWS_MACHINE_LOG_DIR'] = str(confined(home, f'state/projects/{project_key}/logs/{surface}'))
@@ -313,6 +417,21 @@ def main():
         confined(runtime, f'surfaces/{surface}/lib/{adapter_name}'),
     ]
     env['CAWS_SESSION_TRANSCRIPT_ADAPTER'] = next((str(p) for p in adapter_candidates if p.is_file()), '')
+    selection = describe_selection(
+        identity, canonical, runtime, home, surface, event, hooks, handlers,
+        libraries, overrides, env['CAWS_SESSION_TRANSCRIPT_ADAPTER'], system is not None,
+        inspect_local=describe)
+    if describe:
+        print(json.dumps(selection, indent=2, sort_keys=True))
+        return 0
+    settlement_file = tempfile.NamedTemporaryFile(
+        prefix='caws-hook-offers-', suffix='.jsonl', delete=False)
+    settlement_file.close()
+    env['CAWS_HOOK_SETTLEMENT_FILE'] = settlement_file.name
+    execution_file = tempfile.NamedTemporaryFile(prefix='caws-hook-execution-', suffix='.jsonl', delete=False)
+    execution_file.close()
+    env['CAWS_HOOK_EXECUTION_FILE'] = execution_file.name
+    invocation_id = str(uuid.uuid4())
     env['PYTHONDONTWRITEBYTECODE'] = '1'
     payload['hook_event_name'] = EVENTS[event]
     result = None
@@ -328,12 +447,14 @@ def main():
         sys.stdout.buffer.flush()
         adapter_handoff = True
     finally:
+        retain_execution_records(execution_file.name, canonical, selection, invocation_id, raw, result)
         if result is not None:
             settle_message_offers(
                 settlement_file.name, env, root, adapter_handoff,
                 result.returncode == 2)
         try:
             Path(settlement_file.name).unlink()
+            Path(execution_file.name).unlink()
         except OSError:
             pass
     return result.returncode

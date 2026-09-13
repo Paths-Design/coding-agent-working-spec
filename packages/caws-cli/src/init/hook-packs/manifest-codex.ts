@@ -73,7 +73,8 @@ import type { HookPackV1 } from './types';
 // Version 22: CAWS-HOOK-ADVISORY-SESSION-DEDUP-01. The Codex dispatch override
 // adopts per-session advisory suppression keyed on exact text, retaining deny
 // precedence and its exit-1 promotion.
-export const CODEX_PACK_VERSION = 22;
+// Hook port qualification: shared execution records and session-cache custody.
+export const CODEX_PACK_VERSION = 23;
 
 export const CODEX_PACK: HookPackV1 = {
   id: 'codex',

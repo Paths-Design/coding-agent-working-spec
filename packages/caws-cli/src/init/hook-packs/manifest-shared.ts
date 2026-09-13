@@ -423,7 +423,8 @@ import { isAdapterCoveredSurface } from './types';
 // audit, and lib/heredoc.sh) move the enforcement plane while leaving every
 // consumer of the signal believing nothing changed. Bump it WITH the template
 // change; tests/init/pack-fingerprint.test.js fails closed otherwise.
-export const SHARED_PACK_VERSION = 68;
+// Hook port qualification: shared execution records and session-cache custody.
+export const SHARED_PACK_VERSION = 69;
 
 /**
  * The vendored TELEMETRY rows: the turn-log fold (session-log.sh +
@@ -562,6 +563,12 @@ export const SHARED_PACK: HookPackV1 = {
     {
       destPath: '.caws/hooks/lib/agent-surface.sh',
       sourcePath: 'lib/agent-surface.sh',
+      executable: false,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/session-cache.sh',
+      sourcePath: 'lib/session-cache.sh',
       executable: false,
       managed: true,
     },
