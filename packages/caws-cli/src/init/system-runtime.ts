@@ -266,8 +266,15 @@ export function configureSystemRuntime(options: SystemOptions): {
   return { changed: changes.length > 0, changes, restartRequired: changes.length > 0 };
 }
 
+// The install-time version stamp is the only rewrite `caws init` applies to a
+// stock file, and it appears in two header syntaxes: the comment form
+// (`hook_pack_version: N`) and the JSON-description form JSON templates must use
+// because JSON has no comment syntax (`hook_pack_version=N`). Normalize both, or
+// a JSON managed file reports as drift against the unstamped runtime snapshot.
+// The shell-side drift check in templates/hook-packs/shared/agent-register.sh
+// carries the same normalizer and must stay in lockstep with this one.
 const comparable = (text: string): string =>
-  text.replace(/hook_pack_version:\s*\d+/g, 'hook_pack_version: N');
+  text.replace(/hook_pack_version\s*[:=]\s*\d+/g, 'hook_pack_version: N');
 function inferPolicy(
   repo: string,
   surface: string,

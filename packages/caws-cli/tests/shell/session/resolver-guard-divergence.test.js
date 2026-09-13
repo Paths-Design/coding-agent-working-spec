@@ -24,9 +24,10 @@
  *       instead of silently selecting a sibling session.
  *   A4  mintCapsule stamps a harness surface name (codex/claude-code/none),
  *       NEVER the OS string (darwin/linux).
- *   A5  the canonical codex parse-input.sh override writes the `platform` field
- *       to the durable envelope (the concrete root-cause fix). Asserted as a
- *       template-content check + a round-trip through the resolver.
+ *   A5  the durable envelope records the harness platform (codex, never the
+ *       claude-code fallback) — asserted against the shared writer that now
+ *       owns the field plus a behavioral run of the shipped writer under the
+ *       shipped codex surface.
  *   A6  the three shell precedence sites (resolver env chain, block-dangerous,
  *       reset-danger-latch) agree — asserted by sourcing the shared helper and
  *       confirming each site routes through it / matches its order.
@@ -35,6 +36,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { spawnSync } = require('child_process');
 
 const {
   resolveSession,
@@ -597,40 +599,83 @@ describe('CAWS-SESSION-RESOLVER-GUARD-DIVERGENCE-001 — A4: mint platform is a 
   });
 });
 
-// --- A5: canonical codex parse-input.sh writes the platform field ------------
+// --- A5: the durable envelope's platform field -------------------------------
 
-describe('CAWS-SESSION-RESOLVER-GUARD-DIVERGENCE-001 — A5: codex envelope platform field', () => {
-  // The concrete root-cause fix: the canonical codex override must write
-  // `platform` to the durable envelope so the resolver does not fall back to
-  // 'claude-code' for a codex session. Asserted as a template-content check
-  // (the bug was the field's ABSENCE in the shipped template).
-  const CODEX_PARSE_INPUT = path.join(
+describe('CAWS-SESSION-RESOLVER-GUARD-DIVERGENCE-001 — A5: durable envelope platform field', () => {
+  // The codex-specific envelope writer was consolidated into the shared session
+  // cache (CAWS-HOOK-PORT-QUALIFICATION-001), so the old assertion against the
+  // codex override's own copy pinned a location that no longer exists. The
+  // behavior it protected still has to hold, and it has two legs:
+  //   1. the shared writer emits `platform` sourced from CAWS_PLATFORM_FLAG, and
+  //   2. the codex surface sets CAWS_PLATFORM_FLAG=codex — without which the
+  //      shared writer's claude-code default silently mislabels every codex
+  //      session, which is the exact regression the original test guarded.
+  // Leg 1 is asserted against the owning file; leg 2 is asserted behaviorally
+  // by running the shipped writer under the shipped codex surface and reading
+  // the envelope it produces.
+  const SHARED_LIB = path.join(
     __dirname,
     '..',
     '..',
     '..',
     'templates',
     'hook-packs',
-    'codex',
-    'hooks',
-    'lib',
-    'parse-input.sh'
+    'shared',
+    'lib'
   );
+  const ENVELOPE_WRITER = path.join(SHARED_LIB, 'session-cache.sh');
+  const SURFACE_LIB = path.join(SHARED_LIB, 'agent-surface.sh');
 
-  test('the codex envelope-writer payload includes a platform key', () => {
-    expect(fs.existsSync(CODEX_PARSE_INPUT)).toBe(true);
-    const src = fs.readFileSync(CODEX_PARSE_INPUT, 'utf8');
-    // The payload dict written by _write_durable_session_envelope must include
-    // a "platform" key (pre-fix it had only 5 keys: session_id, repo_root,
-    // created_at, last_seen_at, hook_event).
-    expect(src).toMatch(/"platform":\s*sys\.argv/);
+  test('the shared envelope writer emits platform from CAWS_PLATFORM_FLAG', () => {
+    expect(fs.existsSync(ENVELOPE_WRITER)).toBe(true);
+    const src = fs.readFileSync(ENVELOPE_WRITER, 'utf8');
+    expect(src).toMatch(/'platform':\s*platform/);
+    expect(src).toMatch(/CAWS_PLATFORM_FLAG:-/);
   });
 
-  test('the codex envelope-writer sources platform from CAWS_PLATFORM_FLAG', () => {
-    const src = fs.readFileSync(CODEX_PARSE_INPUT, 'utf8');
-    // The platform value must come from CAWS_PLATFORM_FLAG (exported by
-    // agent-surface.sh as "codex" for this surface), with a codex default.
-    expect(src).toMatch(/CAWS_PLATFORM_FLAG:-codex/);
+  test('a codex surface writes platform=codex to the durable envelope (behavioral)', () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'caws-codex-platform-'));
+    const sid = 'sess-codex-platform';
+    try {
+      expect(spawnSync('git', ['init', '-q', '-b', 'main', repoRoot]).status).toBe(0);
+      fs.mkdirSync(path.join(repoRoot, '.caws'), { recursive: true });
+
+      // Source the real surface lib (sets CAWS_PLATFORM_FLAG for the codex
+      // surface) and the real envelope writer, then run the writer exactly as
+      // the installed hook chain does.
+      const script = [
+        'set -euo pipefail',
+        'export CAWS_AGENT_SURFACE=codex',
+        'export CAWS_PROJECT_DIR="$1"',
+        'export HOOK_SESSION_ID="$2"',
+        'export HOOK_CWD="$1"',
+        'export HOOK_EVENT_NAME=PreToolUse',
+        'source "$3"',
+        'source "$4"',
+        '_write_durable_session_envelope',
+      ].join('\n');
+      const run = spawnSync(
+        'bash',
+        ['-c', script, 'bash', repoRoot, sid, SURFACE_LIB, ENVELOPE_WRITER],
+        { encoding: 'utf8', env: { ...process.env } }
+      );
+      expect(run.status).toBe(0);
+
+      const envelopePath = path.join(
+        repoRoot,
+        '.caws',
+        'sessions',
+        sid,
+        '.session-envelope.json'
+      );
+      expect(fs.existsSync(envelopePath)).toBe(true);
+      const envelope = JSON.parse(fs.readFileSync(envelopePath, 'utf8'));
+      // The fallback would be 'claude-code'; a codex session must never get it.
+      expect(envelope.platform).toBe('codex');
+      expect(envelope.session_id).toBe(sid);
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
   });
 });
 

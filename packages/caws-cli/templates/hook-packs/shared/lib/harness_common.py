@@ -1,3 +1,16 @@
+# CAWS-MANAGED-HOOK
+# hook_pack: shared
+# hook_pack_version: 1
+# caws_min_major: 11
+# edit_stance: YOURS TO EDIT. This is a starting hook, not a locked one — shape it
+#   to your repo: tune thresholds, add checks, remove what does not fit. Your edits
+#   are preserved: caws init treats a changed hook as intended growth and will not
+#   clobber it — it shows a diff and asks (--adopt keeps yours; --overwrite --force
+#   takes the upstream template). The CAWS-MANAGED-HOOK marker above is only how caws
+#   init finds hooks it can offer updates for; it is NOT a keep-out sign. CAWS owns the
+#   failure-class invariant (the why/what a guard protects); you own the how. The one
+#   edit to avoid: gutting a guard to dodge a block instead of fixing the cause. Grow
+#   everything else freely.
 """Shared types and helpers for per-harness transcript adapters.
 
 Each harness (codex, claude-code, zcode, opencode) owns a sibling module

@@ -79,8 +79,11 @@ fi
 # is the only install-time rewrite (measured exhaustively: 50/50 present stock
 # files differ by that line and nothing else), and it is neutralized on BOTH
 # sides with the normalizer the CLI itself uses for the same comparison in
-# src/init/system-runtime.ts. A genuine repo-local edit survives it and is
-# reported.
+# src/init/system-runtime.ts. The stamp appears in two header syntaxes — the
+# comment form (`hook_pack_version: N`) and the JSON-description form that JSON
+# templates must use because JSON has no comments (`hook_pack_version=N`) — so
+# the normalizer must match both, or every JSON managed file reports as drift on
+# a clean install. A genuine repo-local edit survives it and is reported.
 #
 # READ-ONLY + FAIL-OPEN: reads the runtime pointer, its manifest and the
 # installed files, emits at most one bounded context line, and emits NOTHING
@@ -103,7 +106,7 @@ if [[ "${CAWS_PACK_STALENESS_CHECK:-1}" != "0" ]] && command -v node >/dev/null 
       if (!home || !hooks) process.exit(0);
       const sha = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
       const normalize = (text) =>
-        text.replace(/hook_pack_version:\s*\d+/g, "hook_pack_version: N");
+        text.replace(/hook_pack_version\s*[:=]\s*\d+/g, "hook_pack_version: N");
       let pointer;
       try {
         pointer = JSON.parse(fs.readFileSync(path.join(home, "state/adapter-runtime.json"), "utf8"));

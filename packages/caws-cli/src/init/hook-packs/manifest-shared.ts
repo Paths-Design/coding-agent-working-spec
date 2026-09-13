@@ -424,7 +424,10 @@ import { isAdapterCoveredSurface } from './types';
 // consumer of the signal believing nothing changed. Bump it WITH the template
 // change; tests/init/pack-fingerprint.test.js fails closed otherwise.
 // Hook port qualification: shared execution records and session-cache custody.
-export const SHARED_PACK_VERSION = 72;
+// Managed-header contract repair (CAWS-HOOK-PACK-MANAGED-HEADER-001): every
+// managed template now carries a parseable header, so a fresh install is
+// re-adoptable by a later install or a second-surface init.
+export const SHARED_PACK_VERSION = 73;
 
 /**
  * The vendored TELEMETRY rows: the turn-log fold (session-log.sh +
