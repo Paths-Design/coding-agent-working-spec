@@ -383,13 +383,13 @@ this scoped harvest. No clean-doctor or fresh native lifecycle claim is made.
 
 ## Review decisions and completion limits
 
-- [ ] Adopt selected-executable/digest diagnostics and surface-specific
+- [yes] Adopt selected-executable/digest diagnostics and surface-specific
   ask-capability checks.
-- [ ] Port the shared recognizer and worktree-operation fixes with adversarial
+- [yes] Port the shared recognizer and worktree-operation fixes with adversarial
   authority/operand tests.
-- [ ] Port session fidelity with schema and all-surface compatibility controls.
-- [ ] Qualify the daemon/cache as a separate performance change after fidelity.
-- [ ] Offer hardened optional utility hooks with consumer-owned policies.
+- [yes] Port session fidelity with schema and all-surface compatibility controls.
+- [yes] Qualify the daemon/cache as a separate performance change after fidelity.
+- [yes] Offer hardened optional utility hooks with consumer-owned policies.
 
 The harvest leaves hook enablement and these multi-component design decisions
 for explicit review. It does not declare the complete hook system best in

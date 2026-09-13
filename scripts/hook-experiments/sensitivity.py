@@ -67,9 +67,15 @@ def main():
             altered = source.replace(original, mutation)
             target.write_text(altered)
             outcome = execute(base / name / 'mutant', copied, test)
-        # An assertion failure demonstrates sensitivity; import/setup errors do not.
+        # Match the decision-bearing assertion; arbitrary setup assertions are inconclusive.
         stderr = (base / name / 'mutant/stderr').read_text()
-        killed = control['exit_code'] == 0 and outcome['exit_code'] == 1 and 'AssertionError' in stderr
+        expected_assertion = {
+            'source-digest': "self.assertEqual(record['source_sha256'], selected['handlers'][0]['sha256'])",
+            'denial-priority': 'self.assertEqual(denied.returncode, 2, denied.stderr)',
+            'cache-symlink': 'self.assertEqual(list(outside.iterdir()), [])',
+        }[name]
+        killed = (control['exit_code'] == 0 and outcome['exit_code'] == 1
+                  and 'AssertionError' in stderr and expected_assertion in stderr)
         results.append({'name': name, 'source': relative, 'test': test,
                         'original_sha256': hashlib.sha256(source.encode()).hexdigest(),
                         'mutant_sha256': hashlib.sha256(altered.encode()).hexdigest(),

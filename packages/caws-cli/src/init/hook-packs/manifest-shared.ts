@@ -424,7 +424,7 @@ import { isAdapterCoveredSurface } from './types';
 // consumer of the signal believing nothing changed. Bump it WITH the template
 // change; tests/init/pack-fingerprint.test.js fails closed otherwise.
 // Hook port qualification: shared execution records and session-cache custody.
-export const SHARED_PACK_VERSION = 69;
+export const SHARED_PACK_VERSION = 70;
 
 /**
  * The vendored TELEMETRY rows: the turn-log fold (session-log.sh +
@@ -560,6 +560,18 @@ export const SHARED_PACK: HookPackV1 = {
     },
 
     // -- Shared libraries --
+    {
+      destPath: '.caws/hooks/lib/bash-mutation-targets.sh',
+      sourcePath: 'lib/bash-mutation-targets.sh',
+      executable: false,
+      managed: true,
+    },
+    {
+      destPath: '.caws/hooks/lib/ask-capability.sh',
+      sourcePath: 'lib/ask-capability.sh',
+      executable: false,
+      managed: true,
+    },
     {
       destPath: '.caws/hooks/lib/agent-surface.sh',
       sourcePath: 'lib/agent-surface.sh',
